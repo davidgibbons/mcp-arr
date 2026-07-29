@@ -1,6 +1,6 @@
 {
   "name": "mcp-arr-server",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "mcpName": "io.github.aplaceforallmystuff/mcp-arr",
   "description": "MCP server for *arr media management suite - Sonarr, Radarr, Lidarr, Prowlarr",
   "main": "dist/index.js",
@@ -17,6 +17,8 @@
     "test": "npm run build && node --test",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
+    "sync-server-json": "node scripts/sync-server-json.mjs",
+    "version": "npm run sync-server-json && git add server.json",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
