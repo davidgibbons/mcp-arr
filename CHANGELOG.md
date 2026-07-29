@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Server no longer reports a stale version to clients.** `SERVER_VERSION` was hardcoded to `1.6.3` and had not been updated for three releases, so every client saw `1.6.3` in the `initialize` response regardless of the version actually running. It is now read from `package.json` at startup, which cannot drift. Falls back to `0.0.0-unknown` with a diagnostic on stderr if the file is unreadable, rather than failing startup.
+
+### Documentation
+- Documented `sonarr_refresh_series` and `radarr_refresh_movie` in the README tool tables. Both shipped in 1.6.1 (via [#9](https://github.com/aplaceforallmystuff/mcp-arr/pull/9)) but were never listed, leaving 43 of 45 tools documented.
+
+### Security
+- Bumped `@modelcontextprotocol/sdk` from 1.29.0 to **1.30.0** and refreshed `package-lock.json` to clear seven Dependabot advisories in transitive dependencies. All were pulled in via the SDK; none are direct dependencies of this project, and none are reachable from the code paths this server uses (it imports only `Server`, `StdioServerTransport` and `StreamableHTTPServerTransport`, and builds its own listener on `node:http`). The lockfile still matters because the Docker image installs with `npm ci`.
+  - `fast-uri` 3.1.2 → **3.1.4** (via `ajv`) — host confusion via literal backslash authority delimiter (GHSA-v2hh-gcrm-f6hx, high) and via failed IDN canonicalization (GHSA-4c8g-83qw-93j6, high).
+  - `hono` 4.12.26 → **4.12.32** — server-side XSS via JSX escaping bypass in `cx()` (GHSA-w62v-xxxg-mg59), `hono/jsx` cross-request context disclosure (GHSA-hvrm-45r6-mjfj), and API Gateway v1 adapter dropping a repeated request header during de-duplication (GHSA-xgm2-5f3f-mvvc). This server uses no JSX and no Lambda adapter.
+  - `@hono/node-server` 1.19.14 → **2.0.12** — `serve-static` path traversal on Windows via encoded backslash `%5C` (GHSA-frvp-7c67-39w9). Required the SDK bump: 1.29.0 pinned `^1.19.9`, which cannot reach the patched 2.0.5; 1.30.0 widens the range to `^1.19.9 || ^2.0.5`. This server does not use `serve-static`.
+  - `body-parser` 2.2.2 → **2.3.0** (via `express`) — denial of service when an invalid limit value silently disables size enforcement (GHSA-v422-hmwv-36x6). This server does not use Express.
+
 ## [1.7.2] - 2026-06-30
 
 ### Fixed

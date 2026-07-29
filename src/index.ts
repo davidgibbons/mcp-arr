@@ -21,6 +21,7 @@ import {
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import {
   SonarrClient,
   RadarrClient,
@@ -30,7 +31,27 @@ import {
 } from "./arr-client.js";
 import { trashClient, TrashService } from "./trash-client.js";
 
-const SERVER_VERSION = "1.6.3";
+// Read from package.json rather than hardcoding, so the version reported to
+// clients can never drift from the released version. package.json sits at the
+// package root in every distribution: npm always ships it, and the Dockerfile
+// copies it alongside dist/.
+function readServerVersion(): string {
+  try {
+    const pkgUrl = new URL("../package.json", import.meta.url);
+    const pkg = JSON.parse(readFileSync(pkgUrl, "utf8")) as { version?: string };
+    if (pkg.version) return pkg.version;
+    console.error("[mcp-arr] package.json has no version field");
+  } catch (error) {
+    console.error(
+      `[mcp-arr] could not read version from package.json: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  return "0.0.0-unknown";
+}
+
+const SERVER_VERSION = readServerVersion();
 const TRANSPORT_MODE = (process.env.MCP_TRANSPORT || "stdio").toLowerCase();
 const HTTP_HOST = process.env.HOST || "127.0.0.1";
 const HTTP_PORT = Number(process.env.PORT || "3000");
