@@ -72,11 +72,15 @@ Environment variables for remote mode:
 
 ### Docker
 
-Build locally:
+Prebuilt images are published to GitHub Container Registry on every release. You do not need to
+build anything:
 
 ```bash
-docker build -t mcp-arr .
+docker pull ghcr.io/aplaceforallmystuff/mcp-arr:latest
 ```
+
+Tags follow the release version — `latest`, `1`, `1.7`, and each exact version such as `1.7.3`.
+Pin to a major or minor tag if you want updates without surprises.
 
 Run in local stdio mode:
 
@@ -84,7 +88,7 @@ Run in local stdio mode:
 docker run --rm -i \
   -e SONARR_URL=http://host.docker.internal:8989 \
   -e SONARR_API_KEY=your-sonarr-api-key \
-  mcp-arr
+  ghcr.io/aplaceforallmystuff/mcp-arr:latest
 ```
 
 Run in remote HTTP mode:
@@ -96,7 +100,7 @@ docker run --rm -p 3000:3000 \
   -e PORT=3000 \
   -e SONARR_URL=http://host.docker.internal:8989 \
   -e SONARR_API_KEY=your-sonarr-api-key \
-  mcp-arr
+  ghcr.io/aplaceforallmystuff/mcp-arr:latest
 ```
 
 Minimal `docker-compose.yml`:
@@ -104,7 +108,7 @@ Minimal `docker-compose.yml`:
 ```yaml
 services:
   mcp-arr:
-    build: .
+    image: ghcr.io/aplaceforallmystuff/mcp-arr:latest
     ports:
       - "3000:3000"
     environment:
@@ -115,6 +119,14 @@ services:
       SONARR_API_KEY: your-sonarr-api-key
       RADARR_URL: http://host.docker.internal:7878
       RADARR_API_KEY: your-radarr-api-key
+```
+
+#### Building it yourself
+
+Only needed if you are developing against a change that is not released yet:
+
+```bash
+docker build -t mcp-arr .
 ```
 
 ### From Source
