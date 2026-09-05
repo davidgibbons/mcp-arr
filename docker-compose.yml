@@ -40,3 +40,6 @@ services:
       # Chaptarr
       CHAPTARR_URL: ${CHAPTARR_URL:-}
       CHAPTARR_API_KEY: ${CHAPTARR_API_KEY:-}
+      # Jellyseerr
+      JELLYSEERR_URL: ${JELLYSEERR_URL:-}
+      JELLYSEERR_API_KEY: ${JELLYSEERR_API_KEY:-}

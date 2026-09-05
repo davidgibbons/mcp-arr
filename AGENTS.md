@@ -51,6 +51,8 @@ node dist/index.js
 | WHISPARR_API_KEY | For Whisparr | API key |
 | CHAPTARR_URL | For Chaptarr | Base URL (e.g. http://localhost:8789) |
 | CHAPTARR_API_KEY | For Chaptarr | API key |
+| JELLYSEERR_URL | For Jellyseerr | Base URL (e.g. http://localhost:5055) |
+| JELLYSEERR_API_KEY | For Jellyseerr | API key |
 
 ## Constraints
 
@@ -82,6 +84,16 @@ rules:
     description: Chaptarr holds audiobooks and eBooks in one instance; media type is identity, not a filter
     check: Library tools take mediaType (all|audiobook|ebook) validated by parseChaptarrMediaType before the call
     note: 'all' means an ABSENT query parameter, never mediaType=all on the wire
+
+  - id: jellyseerr-status-enums
+    description: Jellyseerr sends status as an integer and the enums are wider than older docs
+    check: MediaRequestStatus is 1-5 including COMPLETED=5; MediaStatus is 1-7 including BLOCKLISTED and DELETED
+    note: Read from the running build, not documentation. COMPLETED=5 is the most common value on a real instance.
+
+  - id: jellyseerr-requests-have-no-title
+    description: A Jellyseerr request carries only a tmdbId, never a title
+    check: Titles cost one extra lookup per row, exposed as includeTitles rather than done invisibly
+    note: A failed title lookup must return undefined, never fail the listing
 
   - id: chaptarr-provider-ids
     description: Chaptarr local row ids change when metadata is repaired or merged

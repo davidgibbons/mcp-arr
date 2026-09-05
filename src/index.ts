@@ -12,6 +12,7 @@
  * - PROWLARR_URL, PROWLARR_API_KEY
  * - WHISPARR_URL, WHISPARR_API_KEY
  * - CHAPTARR_URL, CHAPTARR_API_KEY
+ * - JELLYSEERR_URL, JELLYSEERR_API_KEY
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -31,6 +32,11 @@ import {
   ProwlarrClient,
   WhisparrClient,
   ChaptarrClient,
+  JellyseerrClient,
+  JellyseerrRequest,
+  parseJellyseerrFilter,
+  JELLYSEERR_REQUEST_STATUS,
+  JELLYSEERR_MEDIA_STATUS,
   parseChaptarrMediaType,
   ChaptarrMediaType,
   ChaptarrAuthor,
@@ -83,6 +89,7 @@ const services: ServiceConfig[] = [
   { name: 'prowlarr', displayName: 'Prowlarr (Indexers)', url: process.env.PROWLARR_URL, apiKey: process.env.PROWLARR_API_KEY },
   { name: 'whisparr', displayName: 'Whisparr (Adult)', url: process.env.WHISPARR_URL, apiKey: process.env.WHISPARR_API_KEY },
   { name: 'chaptarr', displayName: 'Chaptarr (Books)', url: process.env.CHAPTARR_URL, apiKey: process.env.CHAPTARR_API_KEY },
+  { name: 'jellyseerr', displayName: 'Jellyseerr (Requests)', url: process.env.JELLYSEERR_URL, apiKey: process.env.JELLYSEERR_API_KEY },
 ];
 
 // Check which services are configured
@@ -96,6 +103,7 @@ const clients: {
   prowlarr?: ProwlarrClient;
   whisparr?: WhisparrClient;
   chaptarr?: ChaptarrClient;
+  jellyseerr?: JellyseerrClient;
 } = {};
 
 for (const service of configuredServices) {
@@ -118,6 +126,9 @@ for (const service of configuredServices) {
       break;
     case 'chaptarr':
       clients.chaptarr = new ChaptarrClient(config);
+      break;
+    case 'jellyseerr':
+      clients.jellyseerr = new JellyseerrClient(config);
       break;
   }
 }
@@ -1256,6 +1267,112 @@ if (clients.chaptarr) {
   );
 }
 
+// Jellyseerr tools
+//
+// Jellyseerr sits in front of Sonarr and Radarr taking requests from users, so
+// it has no quality profiles or root folders of its own and is excluded from
+// addConfigTools() like Prowlarr and Bazarr.
+//
+// Two shapes matter. Status is numeric on the wire and the enums are wider
+// than older docs suggest (COMPLETED=5 is the most common value on a real
+// instance), so every response reports the decoded name next to the number.
+// And a request carries no title, only a tmdbId, so titles cost one extra
+// lookup per row - exposed as an explicit, bounded option rather than done
+// invisibly.
+if (clients.jellyseerr) {
+  TOOLS.push(
+    {
+      name: "jellyseerr_get_summary",
+      description: "Get Jellyseerr's request counts by state (pending, approved, processing, available, failed) plus open issue counts. Start here - it says whether anything needs attention before paging through hundreds of requests.",
+      inputSchema: { type: "object" as const, properties: {}, required: [] },
+    },
+    {
+      name: "jellyseerr_get_requests",
+      description: "Get media requests, newest first. Use filter='pending' for the ones awaiting a decision. Requests carry only a tmdbId, so set includeTitles to resolve human titles - that costs one extra lookup per row and is bounded by the page size.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filter: {
+            type: "string",
+            enum: ["all", "pending", "approved", "processing", "available", "unavailable", "failed", "deleted"],
+            description: "Which requests to return (default: all)",
+          },
+          take: { type: "number", description: "Rows to return (default: 20, max: 50)" },
+          skip: { type: "number", description: "Rows to skip (default: 0)" },
+          sort: { type: "string", enum: ["added", "modified"], description: "Sort order (default: added)" },
+          includeTitles: {
+            type: "boolean",
+            description: "Resolve the human title for each row (default: true). One extra request per row; set false for a fast id-only listing.",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "jellyseerr_get_request",
+      description: "Get one request by id, with its decoded status, requester, and the Sonarr/Radarr id fetching it if it has reached one.",
+      inputSchema: {
+        type: "object" as const,
+        properties: { requestId: { type: "number", description: "Jellyseerr request id" } },
+        required: ["requestId"],
+      },
+    },
+    {
+      name: "jellyseerr_approve_request",
+      description: "Approve a pending request. This hands it to Sonarr or Radarr and starts a real download - it is not a dry run. Check the request with jellyseerr_get_request first if you are unsure.",
+      inputSchema: {
+        type: "object" as const,
+        properties: { requestId: { type: "number", description: "Jellyseerr request id to approve" } },
+        required: ["requestId"],
+      },
+    },
+    {
+      name: "jellyseerr_decline_request",
+      description: "Decline a pending request. Closes the request; downloads nothing and removes nothing already fetched.",
+      inputSchema: {
+        type: "object" as const,
+        properties: { requestId: { type: "number", description: "Jellyseerr request id to decline" } },
+        required: ["requestId"],
+      },
+    },
+    {
+      name: "jellyseerr_get_issues",
+      description: "Get issues users have reported against media (wrong subtitles, bad video, missing episodes).",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          take: { type: "number", description: "Rows to return (default: 20, max: 50)" },
+          skip: { type: "number", description: "Rows to skip (default: 0)" },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "jellyseerr_search",
+      description: "Search Jellyseerr's metadata provider for movies, TV and people. Returns tmdbIds usable with the request tools.",
+      inputSchema: {
+        type: "object" as const,
+        properties: { query: { type: "string", description: "Search term" } },
+        required: ["query"],
+      },
+    },
+    {
+      name: "jellyseerr_get_users",
+      description: "Get Jellyseerr users with their request counts and quotas. Useful for seeing who is asking for what.",
+      inputSchema: {
+        type: "object" as const,
+        properties: { take: { type: "number", description: "Rows to return (default: 50, max: 100)" } },
+        required: [],
+      },
+    },
+    {
+      name: "jellyseerr_review_setup",
+      description: "Get a Jellyseerr configuration review: version, request counts by state, open issues, and user count. Use this to analyse the setup and spot a backlog.",
+      inputSchema: { type: "object" as const, properties: {}, required: [] },
+    }
+  );
+}
+
 // Cross-service search tool
 TOOLS.push({
   name: "arr_search_all",
@@ -1529,6 +1646,45 @@ function summarizeChaptarrBook(b: ChaptarrBook) {
       edition: b.foreignEditionId ?? null,
     },
   };
+}
+
+/**
+ * Flatten a Jellyseerr request for a tool response.
+ *
+ * Status is numeric on the wire, so both the raw number and the decoded name
+ * are reported - the number so it can be matched against the API, the name so
+ * a reader does not have to memorise an enum whose values are wider than the
+ * documented four.
+ */
+function summarizeJellyseerrRequest(r: JellyseerrRequest, title?: string) {
+  const m = r.media ?? ({} as NonNullable<JellyseerrRequest['media']>);
+  return {
+    id: r.id,
+    title: title ?? null,
+    type: r.type,
+    status: JELLYSEERR_REQUEST_STATUS[r.status] ?? `unknown (${r.status})`,
+    statusCode: r.status,
+    mediaStatus: m.status ? (JELLYSEERR_MEDIA_STATUS[m.status] ?? `unknown (${m.status})`) : null,
+    is4k: r.is4k ?? false,
+    seasons: (r.seasons ?? []).map(x => x.seasonNumber),
+    requestedBy: r.requestedBy?.displayName ?? r.requestedBy?.username ?? null,
+    requestedById: r.requestedBy?.id ?? null,
+    createdAt: r.createdAt ?? null,
+    tmdbId: m.tmdbId ?? null,
+    tvdbId: m.tvdbId ?? null,
+    imdbId: m.imdbId ?? null,
+    // The Sonarr/Radarr id actually fetching this, once it has reached one.
+    externalServiceId: m.externalServiceId ?? null,
+  };
+}
+
+/** Resolve titles for a page in parallel; a failure just leaves it null. */
+async function withJellyseerrTitles(
+  client: JellyseerrClient, rows: JellyseerrRequest[],
+): Promise<Array<ReturnType<typeof summarizeJellyseerrRequest>>> {
+  const titles = await Promise.all(
+    rows.map(r => client.getTitle(r.type, r.media?.tmdbId ?? 0)));
+  return rows.map((r, i) => summarizeJellyseerrRequest(r, titles[i]));
 }
 
 function jsonText(data: unknown) {
@@ -3245,6 +3401,142 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { authorId } = args as { authorId: number };
         const command = await clients.chaptarr.refreshAuthor(authorId);
         return jsonText({ triggered: true, authorId, commandId: command.id });
+      }
+
+      // ---- Jellyseerr -----------------------------------------------------
+      case "jellyseerr_get_summary": {
+        if (!clients.jellyseerr) throw new Error("Jellyseerr not configured");
+        const [counts, issues] = await Promise.all([
+          clients.jellyseerr.getRequestCounts(),
+          clients.jellyseerr.getIssueCount().catch(() => ({} as Record<string, number>)),
+        ]);
+        return jsonText({
+          requests: {
+            total: counts.total,
+            // The state worth acting on: nothing else needs a human.
+            pending: counts.pending,
+            approved: counts.approved,
+            processing: counts.processing,
+            available: counts.available,
+            declined: counts.declined,
+            failed: counts.failed ?? null,
+            completed: counts.completed ?? null,
+            movie: counts.movie,
+            tv: counts.tv,
+          },
+          issues,
+        });
+      }
+
+      case "jellyseerr_get_requests": {
+        if (!clients.jellyseerr) throw new Error("Jellyseerr not configured");
+        const { filter, take = 20, skip = 0, sort = "added", includeTitles = true } = args as {
+          filter?: string; take?: number; skip?: number;
+          sort?: "added" | "modified"; includeTitles?: boolean;
+        };
+        const parsed = parseJellyseerrFilter(filter);
+        const page = await clients.jellyseerr.getRequests(parsed, take, skip, sort);
+        const rows = includeTitles
+          ? await withJellyseerrTitles(clients.jellyseerr, page.results)
+          : page.results.map(r => summarizeJellyseerrRequest(r));
+        return jsonText({
+          filter: parsed ?? 'all',
+          total: page.pageInfo?.results ?? rows.length,
+          returned: rows.length,
+          skip,
+          hasMore: skip + rows.length < (page.pageInfo?.results ?? rows.length),
+          nextSkip: skip + rows.length < (page.pageInfo?.results ?? rows.length) ? skip + rows.length : null,
+          titlesResolved: includeTitles,
+          requests: rows,
+        });
+      }
+
+      case "jellyseerr_get_request": {
+        if (!clients.jellyseerr) throw new Error("Jellyseerr not configured");
+        const { requestId } = args as { requestId: number };
+        const r = await clients.jellyseerr.getRequestById(requestId);
+        const title = await clients.jellyseerr.getTitle(r.type, r.media?.tmdbId ?? 0);
+        return jsonText(summarizeJellyseerrRequest(r, title));
+      }
+
+      case "jellyseerr_approve_request":
+      case "jellyseerr_decline_request": {
+        if (!clients.jellyseerr) throw new Error("Jellyseerr not configured");
+        const { requestId } = args as { requestId: number };
+        const approving = name === "jellyseerr_approve_request";
+        const updated = await clients.jellyseerr.setRequestStatus(
+          requestId, approving ? 'approve' : 'decline');
+        return jsonText({
+          requestId,
+          action: approving ? 'approved' : 'declined',
+          status: JELLYSEERR_REQUEST_STATUS[updated.status] ?? `unknown (${updated.status})`,
+          statusCode: updated.status,
+          note: approving
+            ? 'Handed to Sonarr/Radarr; a download will start if an indexer has it.'
+            : undefined,
+        });
+      }
+
+      case "jellyseerr_get_issues": {
+        if (!clients.jellyseerr) throw new Error("Jellyseerr not configured");
+        const { take = 20, skip = 0 } = args as { take?: number; skip?: number };
+        const page = await clients.jellyseerr.getIssues(take, skip);
+        return jsonText({
+          total: page.pageInfo?.results ?? page.results.length,
+          returned: page.results.length,
+          skip,
+          issues: page.results,
+        });
+      }
+
+      case "jellyseerr_search": {
+        if (!clients.jellyseerr) throw new Error("Jellyseerr not configured");
+        const { query } = args as { query: string };
+        const page = await clients.jellyseerr.search(query);
+        return jsonText({
+          query,
+          total: page.pageInfo?.results ?? page.results.length,
+          results: page.results.slice(0, 20),
+        });
+      }
+
+      case "jellyseerr_get_users": {
+        if (!clients.jellyseerr) throw new Error("Jellyseerr not configured");
+        const { take = 50 } = args as { take?: number };
+        const page = await clients.jellyseerr.getUsers(take);
+        return jsonText({
+          total: page.pageInfo?.results ?? page.results.length,
+          users: page.results.map(u => ({
+            id: u.id,
+            displayName: u.displayName ?? u.username ?? null,
+            email: u.email ?? null,
+            requestCount: u.requestCount ?? 0,
+            userType: u.userType ?? null,
+          })),
+        });
+      }
+
+      case "jellyseerr_review_setup": {
+        if (!clients.jellyseerr) throw new Error("Jellyseerr not configured");
+        const [about, counts, issues, users] = await Promise.all([
+          clients.jellyseerr.getAbout().catch(() => ({} as Record<string, unknown>)),
+          clients.jellyseerr.getRequestCounts(),
+          clients.jellyseerr.getIssueCount().catch(() => ({} as Record<string, number>)),
+          clients.jellyseerr.getUsers(100).catch(() => ({ results: [], pageInfo: { results: 0 } } as never)),
+        ]);
+        return jsonText({
+          service: 'jellyseerr',
+          version: about.version ?? null,
+          requests: counts,
+          issues,
+          userCount: users.pageInfo?.results ?? users.results?.length ?? 0,
+          // A non-zero pending count with no recent approvals is the usual
+          // sign nobody is minding the queue.
+          needsAttention: {
+            pendingRequests: counts.pending,
+            openIssues: issues.open ?? 0,
+          },
+        });
       }
 
       case "arr_search_all": {

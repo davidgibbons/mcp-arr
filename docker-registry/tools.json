@@ -1,7 +1,7 @@
 [
   {
     "name": "arr_status",
-    "description": "Get status of all configured *arr services. Currently configured: Sonarr (TV), Radarr (Movies), Lidarr (Music), Prowlarr (Indexers), Whisparr (Adult), Chaptarr (Books)",
+    "description": "Get status of all configured *arr services. Currently configured: Sonarr (TV), Radarr (Movies), Lidarr (Music), Prowlarr (Indexers), Whisparr (Adult), Chaptarr (Books), Jellyseerr (Requests)",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -1556,6 +1556,164 @@
       "required": [
         "authorId"
       ]
+    }
+  },
+  {
+    "name": "jellyseerr_get_summary",
+    "description": "Get Jellyseerr's request counts by state (pending, approved, processing, available, failed) plus open issue counts. Start here - it says whether anything needs attention before paging through hundreds of requests.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "jellyseerr_get_requests",
+    "description": "Get media requests, newest first. Use filter='pending' for the ones awaiting a decision. Requests carry only a tmdbId, so set includeTitles to resolve human titles - that costs one extra lookup per row and is bounded by the page size.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filter": {
+          "type": "string",
+          "enum": [
+            "all",
+            "pending",
+            "approved",
+            "processing",
+            "available",
+            "unavailable",
+            "failed",
+            "deleted"
+          ],
+          "description": "Which requests to return (default: all)"
+        },
+        "take": {
+          "type": "number",
+          "description": "Rows to return (default: 20, max: 50)"
+        },
+        "skip": {
+          "type": "number",
+          "description": "Rows to skip (default: 0)"
+        },
+        "sort": {
+          "type": "string",
+          "enum": [
+            "added",
+            "modified"
+          ],
+          "description": "Sort order (default: added)"
+        },
+        "includeTitles": {
+          "type": "boolean",
+          "description": "Resolve the human title for each row (default: true). One extra request per row; set false for a fast id-only listing."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "jellyseerr_get_request",
+    "description": "Get one request by id, with its decoded status, requester, and the Sonarr/Radarr id fetching it if it has reached one.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "number",
+          "description": "Jellyseerr request id"
+        }
+      },
+      "required": [
+        "requestId"
+      ]
+    }
+  },
+  {
+    "name": "jellyseerr_approve_request",
+    "description": "Approve a pending request. This hands it to Sonarr or Radarr and starts a real download - it is not a dry run. Check the request with jellyseerr_get_request first if you are unsure.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "number",
+          "description": "Jellyseerr request id to approve"
+        }
+      },
+      "required": [
+        "requestId"
+      ]
+    }
+  },
+  {
+    "name": "jellyseerr_decline_request",
+    "description": "Decline a pending request. Closes the request; downloads nothing and removes nothing already fetched.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "number",
+          "description": "Jellyseerr request id to decline"
+        }
+      },
+      "required": [
+        "requestId"
+      ]
+    }
+  },
+  {
+    "name": "jellyseerr_get_issues",
+    "description": "Get issues users have reported against media (wrong subtitles, bad video, missing episodes).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "take": {
+          "type": "number",
+          "description": "Rows to return (default: 20, max: 50)"
+        },
+        "skip": {
+          "type": "number",
+          "description": "Rows to skip (default: 0)"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "jellyseerr_search",
+    "description": "Search Jellyseerr's metadata provider for movies, TV and people. Returns tmdbIds usable with the request tools.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Search term"
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "jellyseerr_get_users",
+    "description": "Get Jellyseerr users with their request counts and quotas. Useful for seeing who is asking for what.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "take": {
+          "type": "number",
+          "description": "Rows to return (default: 50, max: 100)"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "jellyseerr_review_setup",
+    "description": "Get a Jellyseerr configuration review: version, request counts by state, open issues, and user count. Use this to analyse the setup and spot a backlog.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
     }
   },
   {

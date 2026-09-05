@@ -5,7 +5,7 @@
  * the same REST API pattern with X-Api-Key header authentication.
  */
 
-export type ArrService = 'sonarr' | 'radarr' | 'lidarr' | 'prowlarr' | 'whisparr' | 'chaptarr';
+export type ArrService = 'sonarr' | 'radarr' | 'lidarr' | 'prowlarr' | 'whisparr' | 'chaptarr' | 'jellyseerr';
 
 export interface ArrConfig {
   url: string;
@@ -1483,5 +1483,166 @@ export class ChaptarrClient extends ArrClient {
       method: 'POST',
       body: JSON.stringify({ name: 'RefreshAuthor', authorId }),
     });
+  }
+}
+
+/**
+ * Jellyseerr - request management sitting in front of Sonarr and Radarr.
+ *
+ * Unlike Bazarr it fits the base client cleanly: /api/v1 with an X-Api-Key
+ * header. Two things do need care:
+ *
+ * 1. Status is numeric on the wire and the enums are NOT the four values older
+ *    documentation describes. Read from the running build, MediaRequestStatus
+ *    is PENDING/APPROVED/DECLINED/FAILED/COMPLETED (1-5) - COMPLETED=5 is the
+ *    most common value in a real instance and is missing from the classic set.
+ * 2. A request carries no title, only a tmdbId. Rendering "what did people
+ *    ask for" therefore needs a second lookup per row, which is why the
+ *    listing exposes that as an explicit, bounded choice rather than doing it
+ *    invisibly on every call.
+ *
+ * media.externalServiceId is the Sonarr/Radarr id, so a request can be traced
+ * into the service that is actually fetching it.
+ */
+export const JELLYSEERR_REQUEST_STATUS: Record<number, string> = {
+  1: 'pending',
+  2: 'approved',
+  3: 'declined',
+  4: 'failed',
+  5: 'completed',
+};
+
+export const JELLYSEERR_MEDIA_STATUS: Record<number, string> = {
+  1: 'unknown',
+  2: 'pending',
+  3: 'processing',
+  4: 'partially available',
+  5: 'available',
+  6: 'blocklisted',
+  7: 'deleted',
+};
+
+/** The filters Jellyseerr's own request list accepts. */
+export const JELLYSEERR_FILTERS = [
+  'all', 'pending', 'approved', 'processing', 'available', 'unavailable', 'failed', 'deleted',
+] as const;
+export type JellyseerrFilter = typeof JELLYSEERR_FILTERS[number];
+
+export function parseJellyseerrFilter(value: unknown): JellyseerrFilter | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const v = String(value).trim().toLowerCase();
+  if (!(JELLYSEERR_FILTERS as readonly string[]).includes(v)) {
+    throw new Error(`filter must be one of ${JELLYSEERR_FILTERS.join(', ')} - got '${value}'`);
+  }
+  return v as JellyseerrFilter;
+}
+
+export interface JellyseerrRequest {
+  id: number;
+  status: number;
+  type: string;
+  createdAt?: string;
+  updatedAt?: string;
+  is4k?: boolean;
+  seasons?: Array<{ seasonNumber: number }>;
+  requestedBy?: { id: number; displayName?: string; username?: string; email?: string };
+  media?: {
+    id: number;
+    tmdbId?: number;
+    tvdbId?: number;
+    imdbId?: string;
+    mediaType?: string;
+    status?: number;
+    /** The Sonarr/Radarr id fetching this, when it has reached one. */
+    externalServiceId?: number;
+    mediaUrl?: string;
+  };
+}
+
+export interface JellyseerrPage<T> {
+  results: T[];
+  pageInfo: { page: number; pages: number; pageSize: number; results: number };
+}
+
+export interface JellyseerrRequestCounts {
+  total: number; movie: number; tv: number;
+  pending: number; approved: number; declined: number;
+  processing: number; available: number;
+  // Not returned by every build - a live 3.3.0 omits `failed` from the counts
+  // even though `filter=failed` returns rows.
+  completed?: number; failed?: number;
+}
+
+export class JellyseerrClient extends ArrClient {
+  constructor(config: ArrConfig) {
+    super('jellyseerr', config);
+    this.apiVersion = 'v1';
+  }
+
+  async getRequestCounts(): Promise<JellyseerrRequestCounts> {
+    return this['request']<JellyseerrRequestCounts>('/request/count');
+  }
+
+  async getRequests(
+    filter?: JellyseerrFilter, take = 20, skip = 0, sort: 'added' | 'modified' = 'added',
+  ): Promise<JellyseerrPage<JellyseerrRequest>> {
+    const parts = [
+      `take=${Math.max(1, Math.min(take, 50))}`,
+      `skip=${Math.max(0, skip)}`,
+      `sort=${sort}`,
+    ];
+    if (filter && filter !== 'all') parts.push(`filter=${filter}`);
+    return this['request']<JellyseerrPage<JellyseerrRequest>>(`/request?${parts.join('&')}`);
+  }
+
+  async getRequestById(id: number): Promise<JellyseerrRequest> {
+    return this['request']<JellyseerrRequest>(`/request/${id}`);
+  }
+
+  /**
+   * Approving a request makes Jellyseerr hand it to Sonarr or Radarr, which
+   * starts a real download. Declining only closes it.
+   */
+  async setRequestStatus(id: number, status: 'approve' | 'decline' | 'pending'): Promise<JellyseerrRequest> {
+    return this['request']<JellyseerrRequest>(`/request/${id}/${status}`, { method: 'POST' });
+  }
+
+  async getIssueCount(): Promise<Record<string, number>> {
+    return this['request']<Record<string, number>>('/issue/count');
+  }
+
+  async getIssues(take = 20, skip = 0): Promise<JellyseerrPage<Record<string, unknown>>> {
+    return this['request']<JellyseerrPage<Record<string, unknown>>>(
+      `/issue?take=${Math.max(1, Math.min(take, 50))}&skip=${Math.max(0, skip)}`);
+  }
+
+  async getUsers(take = 50): Promise<JellyseerrPage<Record<string, unknown>>> {
+    return this['request']<JellyseerrPage<Record<string, unknown>>>(
+      `/user?take=${Math.max(1, Math.min(take, 100))}`);
+  }
+
+  async search(query: string): Promise<JellyseerrPage<Record<string, unknown>>> {
+    return this['request']<JellyseerrPage<Record<string, unknown>>>(
+      `/search?query=${encodeURIComponent(query)}`);
+  }
+
+  /**
+   * Resolve one title. Requests carry only a tmdbId, so this is the second
+   * call needed to render them for a human. Failures return undefined rather
+   * than throwing - a title is a nicety and must never fail a listing.
+   */
+  async getTitle(mediaType: string, tmdbId: number): Promise<string | undefined> {
+    if (!tmdbId) return undefined;
+    const path = mediaType === 'movie' ? `/movie/${tmdbId}` : `/tv/${tmdbId}`;
+    try {
+      const d = await this['request']<{ title?: string; name?: string }>(path);
+      return d.title ?? d.name;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async getAbout(): Promise<Record<string, unknown>> {
+    return this['request']<Record<string, unknown>>('/settings/about');
   }
 }
