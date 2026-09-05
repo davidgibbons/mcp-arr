@@ -49,6 +49,7 @@ import {
   whisparrFileCount,
   whisparrSizeOnDisk,
   ArrService,
+  ProbeStatus,
 } from "./arr-client.js";
 import { trashClient, TrashService } from "./trash-client.js";
 
@@ -140,6 +141,83 @@ for (const service of configuredServices) {
       clients.bazarr = new BazarrClient(config);
       break;
   }
+}
+
+
+// --- Credential health probe -------------------------------------------------
+//
+// `configuredServices` only says which URL + API key pairs were supplied. It is
+// the same whether every key is valid or every key is garbage, so /health used
+// to answer `ok` for a completely broken server and any readiness probe pointed
+// at it stayed green. Tool discovery is no better: tools register on config
+// presence, so a healthy tool list proves nothing about the keys either.
+//
+// This polls each configured service on a timer and caches the outcome. /health
+// then reads the cache, so it stays cheap enough for a probe every few seconds
+// and never fans out eight upstream calls per request.
+
+interface ServiceHealth {
+  status: ProbeStatus | "pending";
+  lastChecked: string | null;
+  error?: string;
+}
+
+// 0 disables the background probe entirely, for anyone who would rather not
+// have the server talking to their *arr apps on a timer.
+const HEALTH_INTERVAL_SECONDS = Number(process.env.MCP_ARR_HEALTH_INTERVAL ?? "60");
+
+const serviceHealth = new Map<ArrService, ServiceHealth>(
+  configuredServices.map((service) => [
+    service.name,
+    { status: "pending", lastChecked: null } as ServiceHealth,
+  ]),
+);
+
+let sweepInFlight = false;
+
+async function runHealthSweep(): Promise<void> {
+  // Probes run on a timer, so a slow or hanging service must not stack up
+  // overlapping sweeps behind it.
+  if (sweepInFlight) return;
+  sweepInFlight = true;
+  try {
+    await Promise.all(configuredServices.map(async (service) => {
+      const client = clients[service.name];
+      if (!client) return;
+      const result = await client.probe();
+      serviceHealth.set(service.name, {
+        status: result.status,
+        lastChecked: new Date().toISOString(),
+        ...(result.error ? { error: result.error } : {}),
+      });
+    }));
+  } finally {
+    sweepInFlight = false;
+  }
+}
+
+function startHealthProbe(): void {
+  if (!Number.isFinite(HEALTH_INTERVAL_SECONDS) || HEALTH_INTERVAL_SECONDS <= 0) {
+    console.error("[mcp-arr] credential health probe disabled (MCP_ARR_HEALTH_INTERVAL <= 0)");
+    return;
+  }
+  // Kick off immediately so /health is answering something real within a second
+  // of startup, then repeat. Deliberately not awaited: a slow *arr must not
+  // delay the server accepting connections.
+  void runHealthSweep();
+  setInterval(() => void runHealthSweep(), HEALTH_INTERVAL_SECONDS * 1000).unref();
+}
+
+/**
+ * true  - every configured service accepted its key
+ * false - at least one is rejecting the key or unreachable
+ * null  - the first sweep has not finished yet, so we genuinely do not know
+ */
+function credentialsOk(): boolean | null {
+  const results = [...serviceHealth.values()];
+  if (results.every((r) => r.status === "ok")) return true;
+  if (results.some((r) => r.status === "unauthorized" || r.status === "unreachable")) return false;
+  return null;
 }
 
 // Build tools based on configured services
@@ -4405,6 +4483,8 @@ function formatBytes(bytes: number): string {
 }
 
 async function startHttpServer() {
+  startHealthProbe();
+
   const httpServer = createServer(async (req, res) => {
     if (!req.url) {
       res.statusCode = 400;
@@ -4420,7 +4500,11 @@ async function startHttpServer() {
         status: "ok",
         version: SERVER_VERSION,
         transport: "http",
+        // Kept for compatibility: which services were configured at all.
         configuredServices: configuredServices.map((service) => service.name),
+        // Whether those configurations actually work.
+        credentialsOk: credentialsOk(),
+        services: Object.fromEntries(serviceHealth),
       }));
       return;
     }
