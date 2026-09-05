@@ -430,7 +430,10 @@ export class ArrClient {
       throw new Error(`${this.serviceName} API error: ${response.status} ${response.statusText} - ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    // DELETE endpoints answer 200 or 204 with an empty body, which
+    // response.json() rejects. Parse only when there is something to parse.
+    const body = await response.text();
+    return (body ? JSON.parse(body) : undefined) as T;
   }
 
   /**
