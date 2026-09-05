@@ -153,6 +153,61 @@
     }
   },
   {
+    "name": "sonarr_refresh_series",
+    "description": "Trigger a metadata refresh for a specific series in Sonarr",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "seriesId": {
+          "type": "number",
+          "description": "Series ID to refresh"
+        }
+      },
+      "required": ["seriesId"]
+    }
+  },
+  {
+    "name": "sonarr_add_series",
+    "description": "Add a TV series to Sonarr. Use sonarr_search first to find the tvdbId, and sonarr_get_root_folders / sonarr_get_quality_profiles to get valid values for rootFolderPath and qualityProfileId. Use sonarr_get_tags to get valid tag IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tvdbId": {
+          "type": "number",
+          "description": "TVDB ID from sonarr_search results"
+        },
+        "title": {
+          "type": "string",
+          "description": "Series title"
+        },
+        "qualityProfileId": {
+          "type": "number",
+          "description": "Quality profile ID from sonarr_get_quality_profiles"
+        },
+        "rootFolderPath": {
+          "type": "string",
+          "description": "Root folder path from sonarr_get_root_folders"
+        },
+        "monitored": {
+          "type": "boolean",
+          "description": "Whether to monitor the series (default: true)"
+        },
+        "seasonFolder": {
+          "type": "boolean",
+          "description": "Whether to use season folders (default: true)"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Array of tag IDs from sonarr_get_tags (optional)"
+        }
+      },
+      "required": ["tvdbId", "title", "qualityProfileId", "rootFolderPath"]
+    }
+  },
+  {
     "name": "sonarr_get_quality_profiles",
     "description": "Get detailed quality profiles from Sonarr. Shows allowed qualities, upgrade settings, and custom format scores.",
     "inputSchema": {
@@ -282,6 +337,149 @@
         }
       },
       "required": ["movieId"]
+    }
+  },
+  {
+    "name": "radarr_refresh_movie",
+    "description": "Trigger a metadata refresh for a specific movie in Radarr",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "movieId": {
+          "type": "number",
+          "description": "Movie ID to refresh"
+        }
+      },
+      "required": ["movieId"]
+    }
+  },
+  {
+    "name": "radarr_add_movie",
+    "description": "Add a movie to Radarr. Use radarr_search first to find the tmdbId, and radarr_get_root_folders / radarr_get_quality_profiles to get valid values. Use radarr_get_tags to get valid tag IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tmdbId": {
+          "type": "number",
+          "description": "TMDB ID from radarr_search results"
+        },
+        "title": {
+          "type": "string",
+          "description": "Movie title"
+        },
+        "qualityProfileId": {
+          "type": "number",
+          "description": "Quality profile ID from radarr_get_quality_profiles"
+        },
+        "rootFolderPath": {
+          "type": "string",
+          "description": "Root folder path from radarr_get_root_folders"
+        },
+        "monitored": {
+          "type": "boolean",
+          "description": "Whether to monitor the movie (default: true)"
+        },
+        "minimumAvailability": {
+          "type": "string",
+          "enum": [
+            "announced",
+            "inCinemas",
+            "released",
+            "tba"
+          ],
+          "description": "When to consider the movie available (default: announced)"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Array of tag IDs from radarr_get_tags (optional)"
+        }
+      },
+      "required": ["tmdbId", "title", "qualityProfileId", "rootFolderPath"]
+    }
+  },
+  {
+    "name": "radarr_update_movie",
+    "description": "Update a movie in Radarr. Can change qualityProfileId, monitored status, minimumAvailability, tags, and path. Fetches the full movie object, applies your changes, and PUTs it back.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "movieId": {
+          "type": "number",
+          "description": "Movie ID to update"
+        },
+        "qualityProfileId": {
+          "type": "number",
+          "description": "New quality profile ID (from radarr_get_quality_profiles)"
+        },
+        "monitored": {
+          "type": "boolean",
+          "description": "Whether to monitor the movie"
+        },
+        "minimumAvailability": {
+          "type": "string",
+          "enum": [
+            "announced",
+            "inCinemas",
+            "released",
+            "tba"
+          ],
+          "description": "When to consider the movie available"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Replace all tags with this list of tag IDs"
+        },
+        "path": {
+          "type": "string",
+          "description": "New file path for the movie"
+        }
+      },
+      "required": ["movieId"]
+    }
+  },
+  {
+    "name": "radarr_delete_queue_item",
+    "description": "Remove an item from the Radarr download queue. Use radarr_get_queue to find queue item IDs. Can optionally blocklist the release to prevent re-grabbing.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queueId": {
+          "type": "number",
+          "description": "Queue item ID (from radarr_get_queue)"
+        },
+        "removeFromClient": {
+          "type": "boolean",
+          "description": "Also remove from download client (default: true)"
+        },
+        "blocklist": {
+          "type": "boolean",
+          "description": "Add release to blocklist to prevent re-grabbing (default: false)"
+        }
+      },
+      "required": ["queueId"]
+    }
+  },
+  {
+    "name": "radarr_search_movies",
+    "description": "Trigger a search for multiple movies at once. Accepts an array of movie IDs. Use this for bulk upgrade requests instead of calling radarr_search_movie one at a time.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "movieIds": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Array of movie IDs to search for"
+        }
+      },
+      "required": ["movieIds"]
     }
   },
   {
@@ -441,6 +639,56 @@
           "description": "Number of days to look ahead (default: 30)"
         }
       },
+      "required": []
+    }
+  },
+  {
+    "name": "lidarr_add_artist",
+    "description": "Add an artist to Lidarr. Use lidarr_search first to find the foreignArtistId, and lidarr_get_root_folders / lidarr_get_quality_profiles / lidarr_get_metadata_profiles to get valid values. Use lidarr_get_tags to get valid tag IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foreignArtistId": {
+          "type": "string",
+          "description": "Foreign artist ID (MusicBrainz ID) from lidarr_search results"
+        },
+        "artistName": {
+          "type": "string",
+          "description": "Artist name"
+        },
+        "qualityProfileId": {
+          "type": "number",
+          "description": "Quality profile ID from lidarr_get_quality_profiles"
+        },
+        "metadataProfileId": {
+          "type": "number",
+          "description": "Metadata profile ID from lidarr_get_metadata_profiles"
+        },
+        "rootFolderPath": {
+          "type": "string",
+          "description": "Root folder path from lidarr_get_root_folders"
+        },
+        "monitored": {
+          "type": "boolean",
+          "description": "Whether to monitor the artist (default: true)"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Array of tag IDs from lidarr_get_tags (optional)"
+        }
+      },
+      "required": ["foreignArtistId", "artistName", "qualityProfileId", "metadataProfileId", "rootFolderPath"]
+    }
+  },
+  {
+    "name": "lidarr_get_metadata_profiles",
+    "description": "Get available metadata profiles for Lidarr. Use this to find valid metadataProfileId values when adding an artist.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
       "required": []
     }
   },
