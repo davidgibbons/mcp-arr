@@ -28,11 +28,26 @@ on:
         description: 'Version to release (e.g. 1.6.4) — must match package.json and exist in CHANGELOG.md'
         required: true
         type: string
+      tag:
+        description: 'Exact tag to build. Defaults to v{version}.'
+        required: false
+        default: ''
+        type: string
+      skip_github_release:
+        description: 'Skip cutting a GitHub Release (it already exists).'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       version:
         description: 'Version to build, without the leading v. The tag must already exist.'
         required: true
+        type: string
+      tag:
+        description: 'The exact tag to build. Pass the tag that was actually created rather than letting it be reconstructed - release-please may prefix a component name.'
+        required: false
+        default: ''
         type: string
       skip_github_release:
         description: 'Skip cutting a GitHub Release - release-please already made one.'
@@ -70,6 +85,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -77,9 +93,14 @@ jobs:
           # A called workflow inherits the caller's event_name and ref, so the
           # ref is useless for identifying the release - an explicit input is
           # the only reliable signal. Prefer it whenever it is set.
+          #
+          # Never reconstruct the tag from the version: release-please prefixes
+          # the component name (mcp-arr-v1.8.0), so "v${VERSION}" is a tag that
+          # does not exist. Use the tag we were handed when there is one.
           if [ -n "${INPUT_VERSION:-}" ]; then
             VERSION="$INPUT_VERSION"
-            TAG="v${VERSION}"
+            TAG="${INPUT_TAG:-}"
+            [ -n "$TAG" ] || TAG="v${VERSION}"
           else
             TAG="$REF_NAME"
             VERSION="${TAG#v}"
