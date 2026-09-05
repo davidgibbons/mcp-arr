@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Everything moves to Node 24.** Node 20 reached end of life on 2026-04-30; Node 24 is the current
+  active LTS (through 2028-04-30). Two independent things were on Node 20 and both are now on 24:
+  - *The Node our code runs on*: the image base is `node:24-alpine`, both workflows build and test on
+    24.x, `engines` is `>=24.0.0`, and the CI matrix is `[24.x, 26.x]` — 26 becomes LTS on 2026-10-28,
+    so testing it now surfaces breakage before it matters. 22, 24 and 26 were all verified passing.
+  - *The runtime GitHub uses to execute each action*: all six pinned actions declared
+    `runs.using: node20`, a runtime GitHub is retiring and already force-migrates to Node 24. Each is
+    bumped to a release declaring `node24` and re-pinned to that release's commit SHA. `ci.yml` is now
+    SHA-pinned too rather than floating on a major tag, matching `release.yml`.
+
 ### Fixed
 
 - **Node 18 was advertised as supported but does not work.** The HTTP transport regression test fails on
