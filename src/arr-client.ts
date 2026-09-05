@@ -300,6 +300,13 @@ export interface DownloadClient {
   tags: number[];
 }
 
+export interface RemotePathMapping {
+  id: number;
+  host: string;
+  remotePath: string;
+  localPath: string;
+}
+
 export interface NamingConfig {
   renameEpisodes?: boolean;
   replaceIllegalCharacters: boolean;
@@ -547,6 +554,17 @@ export class ArrClient {
    */
   async getIndexers(): Promise<Indexer[]> {
     return this.request<Indexer[]>('/indexer');
+  }
+
+  /**
+   * Get remote path mappings.
+   *
+   * Mappings key on the download client's *host setting*, not on the client
+   * itself, so renaming or moving a client silently orphans every mapping it
+   * had while the app still looks healthy elsewhere.
+   */
+  async getRemotePathMappings(): Promise<RemotePathMapping[]> {
+    return this.request<RemotePathMapping[]>('/remotepathmapping');
   }
 }
 

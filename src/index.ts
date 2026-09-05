@@ -189,6 +189,15 @@ function addConfigTools(serviceName: string, displayName: string) {
       },
     },
     {
+      name: `${serviceName}_get_remote_path_mappings`,
+      description: `Get remote path mappings from ${displayName}, each flagged with whether its host still matches a configured download client. Mappings key on the client's host setting, so renaming or moving a client orphans its mappings and every import fails while the app looks healthy elsewhere.`,
+      inputSchema: {
+        type: "object" as const,
+        properties: {},
+        required: [],
+      },
+    },
+    {
       name: `${serviceName}_get_download_clients`,
       description: `Get download client configurations from ${displayName}. Shows configured clients and their settings.`,
       inputSchema: {
@@ -1574,6 +1583,49 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+      }
+
+      // Remote path mappings, checked against the download clients they key on
+      case "sonarr_get_remote_path_mappings":
+      case "radarr_get_remote_path_mappings":
+      case "lidarr_get_remote_path_mappings":
+      case "whisparr_get_remote_path_mappings": {
+        const serviceName = name.split('_')[0] as keyof typeof clients;
+        const client = clients[serviceName];
+        if (!client) throw new Error(`${serviceName} not configured`);
+        const [mappings, downloadClients] = await Promise.all([
+          client.getRemotePathMappings(),
+          client.getDownloadClients(),
+        ]);
+
+        // A mapping is matched by the client's host *setting*, so compare
+        // against that rather than the client's name.
+        const clientHosts = downloadClients.map(c => ({
+          name: c.name,
+          enabled: c.enable,
+          host: String(c.fields?.find(f => f.name === 'host')?.value ?? ''),
+        }));
+        const knownHosts = new Set(clientHosts.map(h => h.host).filter(Boolean));
+
+        const checked = mappings.map(m => ({
+          id: m.id,
+          host: m.host,
+          remotePath: m.remotePath,
+          localPath: m.localPath,
+          matchesDownloadClient: knownHosts.has(m.host),
+        }));
+        const orphaned = checked.filter(m => !m.matchesDownloadClient);
+
+        return jsonText({
+          service: serviceName,
+          count: checked.length,
+          mappings: checked,
+          downloadClientHosts: clientHosts,
+          orphanedCount: orphaned.length,
+          note: orphaned.length > 0
+            ? `${orphaned.length} mapping(s) name a host no configured download client uses. Imports matching those paths will fail while the app otherwise looks healthy.`
+            : "Every mapping's host matches a configured download client.",
+        });
       }
 
       // Health checks
