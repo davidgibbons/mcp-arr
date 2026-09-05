@@ -151,3 +151,16 @@ test("file counts and sizes read from either variant's shape", () => {
   assert.equal(whisparrSizeOnDisk(v3Row), 1024);
   assert.equal(whisparrSizeOnDisk({}), 0);
 });
+
+test("an empty response body does not fail the request", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("", { status: 200 });
+  try {
+    // DELETE endpoints across every *arr app answer with no body; response.json()
+    // rejects on that, so the shared request path must not call it blindly.
+    const client = new WhisparrClient(config);
+    assert.equal(await client.getStatus(), undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
