@@ -10,6 +10,7 @@
  * - RADARR_URL, RADARR_API_KEY
  * - LIDARR_URL, LIDARR_API_KEY
  * - PROWLARR_URL, PROWLARR_API_KEY
+ * - WHISPARR_URL, WHISPARR_API_KEY
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -27,6 +28,7 @@ import {
   RadarrClient,
   LidarrClient,
   ProwlarrClient,
+  WhisparrClient,
   ArrService,
 } from "./arr-client.js";
 import { trashClient, TrashService } from "./trash-client.js";
@@ -70,6 +72,7 @@ const services: ServiceConfig[] = [
   { name: 'radarr', displayName: 'Radarr (Movies)', url: process.env.RADARR_URL, apiKey: process.env.RADARR_API_KEY },
   { name: 'lidarr', displayName: 'Lidarr (Music)', url: process.env.LIDARR_URL, apiKey: process.env.LIDARR_API_KEY },
   { name: 'prowlarr', displayName: 'Prowlarr (Indexers)', url: process.env.PROWLARR_URL, apiKey: process.env.PROWLARR_API_KEY },
+  { name: 'whisparr', displayName: 'Whisparr (Adult)', url: process.env.WHISPARR_URL, apiKey: process.env.WHISPARR_API_KEY },
 ];
 
 // Check which services are configured
@@ -81,6 +84,7 @@ const clients: {
   radarr?: RadarrClient;
   lidarr?: LidarrClient;
   prowlarr?: ProwlarrClient;
+  whisparr?: WhisparrClient;
 } = {};
 
 for (const service of configuredServices) {
@@ -97,6 +101,9 @@ for (const service of configuredServices) {
       break;
     case 'prowlarr':
       clients.prowlarr = new ProwlarrClient(config);
+      break;
+    case 'whisparr':
+      clients.whisparr = new WhisparrClient(config);
       break;
   }
 }

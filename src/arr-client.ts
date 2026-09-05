@@ -1,11 +1,11 @@
 /**
  * *arr Suite API Client
  *
- * All *arr applications (Sonarr, Radarr, Lidarr, Prowlarr) use
+ * All *arr applications (Sonarr, Radarr, Lidarr, Prowlarr, Whisparr) use
  * the same REST API pattern with X-Api-Key header authentication.
  */
 
-export type ArrService = 'sonarr' | 'radarr' | 'lidarr' | 'prowlarr';
+export type ArrService = 'sonarr' | 'radarr' | 'lidarr' | 'prowlarr' | 'whisparr';
 
 export interface ArrConfig {
   url: string;
@@ -909,5 +909,110 @@ export class ProwlarrClient extends ArrClient {
       categories.forEach(c => params.append('categories', c.toString()));
     }
     return this['request']<unknown[]>(`/search?${params.toString()}`);
+  }
+}
+
+/**
+ * Whisparr ships as two incompatible applications that both answer on
+ * /api/v3 with the same auth header:
+ *
+ *   V2          - a Sonarr fork. The UI calls them sites and scenes but the
+ *                 API keeps Sonarr's nouns: /series and /episode.
+ *   V3 ("Eros") - a Radarr fork. Scenes are standalone /movie entries.
+ *
+ * Which one an operator runs is a deployment detail, so resolve it from
+ * /system/status on first use and cache it for the life of the client rather
+ * than asking for a WHISPARR_VERSION env var that would only go stale.
+ */
+export type WhisparrVariant = 'v2' | 'v3';
+
+/** A Whisparr library item: a site under V2, a scene under V3. */
+export type WhisparrItem = Series | Movie;
+
+export class WhisparrClient extends ArrClient {
+  private variant?: WhisparrVariant;
+
+  constructor(config: ArrConfig) {
+    super('whisparr', config);
+  }
+
+  /**
+   * Detect which Whisparr this is. Only a 2.x version is treated as the
+   * Sonarr-shaped V2; everything else falls through to the movie-shaped
+   * endpoints so a future major keeps working without a code change.
+   */
+  async getVariant(): Promise<WhisparrVariant> {
+    if (!this.variant) {
+      const status = await this.getStatus();
+      this.variant = status.version?.startsWith('2.') ? 'v2' : 'v3';
+    }
+    return this.variant;
+  }
+
+  private async resource(): Promise<'series' | 'movie'> {
+    return (await this.getVariant()) === 'v2' ? 'series' : 'movie';
+  }
+
+  /**
+   * Get the whole library: sites under V2, scenes under V3.
+   */
+  async getLibrary(): Promise<WhisparrItem[]> {
+    return this['request']<WhisparrItem[]>(`/${await this.resource()}`);
+  }
+
+  /**
+   * Get a single library item
+   */
+  async getItemById(id: number): Promise<WhisparrItem> {
+    return this['request']<WhisparrItem>(`/${await this.resource()}/${id}`);
+  }
+
+  /**
+   * Look up sites/scenes by name
+   */
+  async searchLibrary(term: string): Promise<SearchResult[]> {
+    return this['request']<SearchResult[]>(`/${await this.resource()}/lookup?term=${encodeURIComponent(term)}`);
+  }
+
+  /**
+   * Get the scenes belonging to one site.
+   *
+   * V2 only: under Eros scenes are library items in their own right, so
+   * getLibrary() already returns them and there is nothing to nest.
+   * The site id is Sonarr's seriesId on the wire.
+   */
+  async getScenes(siteId: number): Promise<Episode[]> {
+    if ((await this.getVariant()) !== 'v2') {
+      throw new Error(
+        'Whisparr V3 (Eros) has no per-site scene list - scenes are library items, use whisparr_get_library instead'
+      );
+    }
+    return this['request']<Episode[]>(`/episode?seriesId=${siteId}`);
+  }
+
+  /**
+   * Trigger a download search for a library item
+   */
+  async searchItem(itemId: number): Promise<{ id: number }> {
+    const body = (await this.getVariant()) === 'v2'
+      ? { name: 'SeriesSearch', seriesId: itemId }
+      : { name: 'MoviesSearch', movieIds: [itemId] };
+    return this['request']<{ id: number }>('/command', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Trigger a metadata refresh for a library item
+   */
+  async refreshItem(itemId: number): Promise<{ id: number }> {
+    const body = (await this.getVariant()) === 'v2'
+      ? { name: 'RefreshSeries', seriesId: itemId }
+      : { name: 'RefreshMovie', movieIds: [itemId] };
+    return this['request']<{ id: number }>('/command', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   }
 }
