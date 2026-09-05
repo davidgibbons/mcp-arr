@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Chaptarr support** (audiobooks and eBooks). [Chaptarr](https://github.com/Chaptarr/chaptarr) is an
+  actively developed Readarr fork — Readarr itself was archived by its maintainers on 2025-06-27 — and it
+  holds both media types in one instance, so media type is part of identity rather than a filter: the same
+  title can be an audiobook row *and* an eBook row with separate monitoring, profiles and root folders.
+  15 Chaptarr tools plus the shared configuration set, wired into `arr_search_all`, behind
+  `CHAPTARR_URL` / `CHAPTARR_API_KEY`.
+  - Library tools take `mediaType` (`all` | `audiobook` | `ebook`), validated client-side so a typo fails
+    locally instead of costing a 400. `all` means an *absent* query parameter, never `mediaType=all`.
+  - Every response reports the provider id (`foreignAuthorId` / `foreignBookId` / `foreignSeriesId`, plus
+    discrete Hardcover/Goodreads/ASIN/Audible ids on books) alongside the local `id`. Chaptarr's contract
+    states local row ids change when metadata is repaired or merged, so callers should key on the provider id.
+  - `chaptarr_add_author` requires a `mediaType` and writes the media-scoped fields for that side only;
+    an audiobook add never initialises the eBook side.
+  - Audiobook-native metadata (narrators, duration, omnibus flag) and Chaptarr-native concepts (editions,
+    book series with reading order) are exposed rather than flattened away.
+
+- **Whisparr support.** Set `WHISPARR_URL` and `WHISPARR_API_KEY` and Whisparr joins `arr_status`, the unified `search`/`fetch` tools, `arr_search_all`, and the shared configuration review tools, alongside seven Whisparr-specific tools (`whisparr_get_library`, `whisparr_search`, `whisparr_get_scenes`, `whisparr_get_queue`, `whisparr_get_calendar`, `whisparr_search_item`, `whisparr_refresh_item`).
+
+  Whisparr ships as two incompatible applications that both answer on `/api/v3`: V2 is a Sonarr fork (`/series`, `/episode`, `SeriesSearch`) and V3 "Eros" is a Radarr fork (`/movie`, `MoviesSearch`). Rather than asking operators to declare which they run, the client resolves it from `/system/status` on first use and caches it, so the same tool names work against either. Library items are sites on V2 and scenes on V3, and every response reports which variant answered. Anything not reporting a 2.x version is treated as Eros, so a future major keeps working without a code change.
+
+  Whisparr only appears in the generic search tools when it is configured, so an operator who has not opted in never sees adult results.
+
+- **Tools for recovering entries after `RemovedSeriesCheck` / `RemovedMovieCheck`.** `whisparr_check_folder` reports the media Whisparr can see in a folder, so a library row reporting zero files can be told apart from one whose files are silently untracked. `whisparr_delete_item` removes the row while always keeping files and never adding an import-list exclusion (neither is configurable: deleting files is wrong when only the metadata pointer broke, and the exclusion is keyed on the dead id so it protects nothing while blocking the replacement). `whisparr_add_item` takes a `path` so a live id can be attached to the folder that already holds the media, and `whisparr_rescan_item` re-reads the disk, which a metadata refresh does not do.
+- **`{service}_get_remote_path_mappings` for Sonarr, Radarr, Lidarr and Whisparr.** Mappings key on the download client's host *setting*, so renaming or moving a client orphans its mappings and every import fails while the app looks healthy elsewhere. The tool flags each mapping with whether its host still matches a configured download client rather than just listing them.
+
 ### Changed
 
 - **Everything moves to Node 24.** Node 20 reached end of life on 2026-04-30; Node 24 is the current
@@ -18,23 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     `runs.using: node20`, a runtime GitHub is retiring and already force-migrates to Node 24. Each is
     bumped to a release declaring `node24` and re-pinned to that release's commit SHA. `ci.yml` is now
     SHA-pinned too rather than floating on a major tag, matching `release.yml`.
-
-### Fixed
-
-- **Node 18 was advertised as supported but does not work.** The HTTP transport regression test fails on
-  Node 18 with `400 !== 200` — the very "Mcp-Session-Id header is required" bug it was written to catch.
-  CI built and type-checked but never ran `node --test`, so this went unnoticed; it reproduces under
-  `node:18-alpine` on the pre-existing lockfile, so it is not dependency drift. Node 18 has been EOL since
-  2025-04-30 and the published image has always been `node:20-alpine`, so nothing shipped was affected.
-  The CI matrix drops 18 and adds 24 (20, 22 and 24 all pass) and `engines` now says `>=20.0.0`.
-  This affects upstream identically.
-- **Two high-severity advisories cleared.** `ip-address` (leading-zero octet parsing, CIDR-suffix and
-  IPv4-mapped misclassification — all SSRF / trust-boundary bypasses) and moderate ones in `qs`. Both are
-  transitive under `@modelcontextprotocol/sdk`, so this is a lockfile-only change with no direct dependency
-  moved; `npm audit` now reports zero vulnerabilities. The security job had been reporting these behind
-  `continue-on-error`. Also covers what upstream's four open dependabot PRs carried.
-
-### Changed
 
 - **CI now runs the test suite.** The build job built and type-checked but never ran `node --test`, so the
   tests gated nothing. Also adds a manual `workflow_dispatch` trigger and moves `actions/checkout` and
@@ -53,25 +63,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   instructions, `docker-compose.yml`, and `docker-registry/server.yaml`. Original authorship
   and the MIT licence are retained.
 
+### Fixed
+
+- **Lidarr advertised two tools twice.** `lidarr_get_quality_profiles` and `lidarr_get_root_folders` were
+  pushed both by the shared `addConfigTools()` helper and by the Lidarr-specific block, so any server with
+  Lidarr configured returned duplicate tool names from `tools/list`. Their second handler cases sat in the
+  same `switch` as the shared ones and were therefore unreachable dead code. Removed the duplicate
+  definitions and the dead cases; runtime behaviour is unchanged because the shared cases always won.
+  This one is upstream's too and is being sent up separately.
+  `test/tool-catalogue.test.mjs` now asserts the advertised catalogue holds no repeated name and that
+  every configured service gets the shared config set exactly once.
+- **Node 18 was advertised as supported but does not work.** The HTTP transport regression test fails on
+  Node 18 with `400 !== 200` — the very "Mcp-Session-Id header is required" bug it was written to catch.
+  CI built and type-checked but never ran `node --test`, so this went unnoticed; it reproduces under
+  `node:18-alpine` on the pre-existing lockfile, so it is not dependency drift. Node 18 has been EOL since
+  2025-04-30 and the published image has always been `node:20-alpine`, so nothing shipped was affected.
+  The CI matrix drops 18 and adds 24 (20, 22 and 24 all pass) and `engines` now says `>=20.0.0`.
+  This affects upstream identically.
+- **Two high-severity advisories cleared.** `ip-address` (leading-zero octet parsing, CIDR-suffix and
+  IPv4-mapped misclassification — all SSRF / trust-boundary bypasses) and moderate ones in `qs`. Both are
+  transitive under `@modelcontextprotocol/sdk`, so this is a lockfile-only change with no direct dependency
+  moved; `npm audit` now reports zero vulnerabilities. The security job had been reporting these behind
+  `continue-on-error`. Also covers what upstream's four open dependabot PRs carried.
+
+- **`radarr_delete_queue_item` always threw on success.** *arr DELETE endpoints answer with an empty body, which `response.json()` rejects, so the shared request path parsed a body that was not there. It now parses only when there is something to parse.
+
 ### Removed
 
 - `server.json` and `scripts/sync-server-json.mjs`. Both existed to keep the MCP **npm** registry
   manifest in step with `package.json`; with no npm package there is nothing to keep in step.
-
-## [Unreleased]
-
-### Added
-- **Whisparr support.** Set `WHISPARR_URL` and `WHISPARR_API_KEY` and Whisparr joins `arr_status`, the unified `search`/`fetch` tools, `arr_search_all`, and the shared configuration review tools, alongside seven Whisparr-specific tools (`whisparr_get_library`, `whisparr_search`, `whisparr_get_scenes`, `whisparr_get_queue`, `whisparr_get_calendar`, `whisparr_search_item`, `whisparr_refresh_item`).
-
-  Whisparr ships as two incompatible applications that both answer on `/api/v3`: V2 is a Sonarr fork (`/series`, `/episode`, `SeriesSearch`) and V3 "Eros" is a Radarr fork (`/movie`, `MoviesSearch`). Rather than asking operators to declare which they run, the client resolves it from `/system/status` on first use and caches it, so the same tool names work against either. Library items are sites on V2 and scenes on V3, and every response reports which variant answered. Anything not reporting a 2.x version is treated as Eros, so a future major keeps working without a code change.
-
-  Whisparr only appears in the generic search tools when it is configured, so an operator who has not opted in never sees adult results.
-
-- **Tools for recovering entries after `RemovedSeriesCheck` / `RemovedMovieCheck`.** `whisparr_check_folder` reports the media Whisparr can see in a folder, so a library row reporting zero files can be told apart from one whose files are silently untracked. `whisparr_delete_item` removes the row while always keeping files and never adding an import-list exclusion (neither is configurable: deleting files is wrong when only the metadata pointer broke, and the exclusion is keyed on the dead id so it protects nothing while blocking the replacement). `whisparr_add_item` takes a `path` so a live id can be attached to the folder that already holds the media, and `whisparr_rescan_item` re-reads the disk, which a metadata refresh does not do.
-- **`{service}_get_remote_path_mappings` for Sonarr, Radarr, Lidarr and Whisparr.** Mappings key on the download client's host *setting*, so renaming or moving a client orphans its mappings and every import fails while the app looks healthy elsewhere. The tool flags each mapping with whether its host still matches a configured download client rather than just listing them.
-
-### Fixed
-- **`radarr_delete_queue_item` always threw on success.** *arr DELETE endpoints answer with an empty body, which `response.json()` rejects, so the shared request path parsed a body that was not there. It now parses only when there is something to parse.
 
 ## [1.7.3] - 2026-07-29
 

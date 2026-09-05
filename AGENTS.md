@@ -49,6 +49,8 @@ node dist/index.js
 | PROWLARR_API_KEY | For Prowlarr | API key |
 | WHISPARR_URL | For Whisparr | Base URL (e.g. http://localhost:6969) |
 | WHISPARR_API_KEY | For Whisparr | API key |
+| CHAPTARR_URL | For Chaptarr | Base URL (e.g. http://localhost:8789) |
+| CHAPTARR_API_KEY | For Chaptarr | API key |
 
 ## Constraints
 
@@ -75,6 +77,16 @@ rules:
   - id: whisparr-variant-detection
     description: Whisparr V2 (Sonarr fork) and V3 "Eros" (Radarr fork) both answer on /api/v3
     check: Never add a WHISPARR_VERSION env var - WhisparrClient.getVariant() resolves it from /system/status and caches it
+
+  - id: chaptarr-media-type
+    description: Chaptarr holds audiobooks and eBooks in one instance; media type is identity, not a filter
+    check: Library tools take mediaType (all|audiobook|ebook) validated by parseChaptarrMediaType before the call
+    note: 'all' means an ABSENT query parameter, never mediaType=all on the wire
+
+  - id: chaptarr-provider-ids
+    description: Chaptarr local row ids change when metadata is repaired or merged
+    check: Every Chaptarr tool response reports foreign*Id (provider id) alongside the local id
+    note: Chaptarr is beta 0.9.x and its contract doc runs ahead of the build - follow what the API returns, not the doc
 
   - id: trash-guides-integration
     description: TRaSH Guides tools use embedded guide data

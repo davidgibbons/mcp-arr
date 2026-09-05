@@ -5,7 +5,7 @@
  * the same REST API pattern with X-Api-Key header authentication.
  */
 
-export type ArrService = 'sonarr' | 'radarr' | 'lidarr' | 'prowlarr' | 'whisparr';
+export type ArrService = 'sonarr' | 'radarr' | 'lidarr' | 'prowlarr' | 'whisparr' | 'chaptarr';
 
 export interface ArrConfig {
   url: string;
@@ -1214,6 +1214,274 @@ export class WhisparrClient extends ArrClient {
     return this['request']<{ id: number }>('/command', {
       method: 'POST',
       body: JSON.stringify(body),
+    });
+  }
+}
+
+/**
+ * Chaptarr - a Readarr fork managing audiobooks and eBooks in one instance.
+ *
+ * Two things make it unlike the other *arr apps:
+ *
+ * 1. Media type is part of identity, not a filter. The same book can exist as
+ *    an audiobook row AND an eBook row, so most endpoints take a `mediaType`
+ *    query parameter and authors carry parallel per-side settings
+ *    (`audiobookMonitored`, `ebookQualityProfileId`, and so on).
+ * 2. Provider ids (`hc:`, `gr:`, `az:`, `ol:`, `gb:`) are the durable identity;
+ *    local row ids are handles that can change when metadata is repaired or
+ *    merged. Callers that cache anything should cache the provider id.
+ *
+ * Chaptarr is beta (0.9.x) and its published contract doc runs ahead of the
+ * shipped build - the doc describes `providerId`/`providerIdsAll` on books,
+ * which 0.9.958 does not emit. These types follow what the build actually
+ * returns.
+ */
+export type ChaptarrMediaType = 'all' | 'audiobook' | 'ebook';
+
+/**
+ * Chaptarr rejects an unknown mediaType with a 400. Validating here turns a
+ * typo into a local error naming the legal values instead of a round trip.
+ */
+export function parseChaptarrMediaType(value: unknown, allowAll = true): ChaptarrMediaType | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  const legal = allowAll ? ['all', 'audiobook', 'ebook'] : ['audiobook', 'ebook'];
+  if (!legal.includes(normalized)) {
+    const quoted = legal.map(v => `'${v}'`);
+    const wanted = quoted.length > 2
+      ? `${quoted.slice(0, -1).join(', ')} or ${quoted[quoted.length - 1]}`
+      : quoted.join(' or ');
+    throw new Error(`mediaType must be ${wanted} - got '${value}'`);
+  }
+  return normalized as ChaptarrMediaType;
+}
+
+/** `all` means "do not scope", which on the wire is an absent parameter. */
+function mediaTypeQuery(mediaType?: ChaptarrMediaType): string {
+  return mediaType && mediaType !== 'all' ? `mediaType=${mediaType}` : '';
+}
+
+function withQuery(path: string, parts: Array<string | undefined>): string {
+  const query = parts.filter((p): p is string => Boolean(p)).join('&');
+  return query ? `${path}?${query}` : path;
+}
+
+export interface ChaptarrAuthor {
+  id: number;
+  authorName: string;
+  sortName: string;
+  /** Provider id, e.g. `hc:880167`. Durable; prefer this over `id`. */
+  foreignAuthorId: string;
+  status: string;
+  overview?: string;
+  monitored: boolean;
+  path?: string;
+  genres?: string[];
+  tags?: number[];
+  added?: string;
+  ratings?: { votes: number; value: number };
+  statistics?: ChaptarrStatistics;
+  // Media-scoped settings. The unscoped fields above are the legacy combined
+  // projection Chaptarr still emits for older clients.
+  audiobookMonitored?: boolean;
+  ebookMonitored?: boolean;
+  audiobookQualityProfileId?: number;
+  ebookQualityProfileId?: number;
+  audiobookMetadataProfileId?: number;
+  ebookMetadataProfileId?: number;
+  audiobookRootFolderPath?: string;
+  ebookRootFolderPath?: string;
+  audiobookTags?: number[];
+  ebookTags?: number[];
+  audiobookStatistics?: ChaptarrStatistics;
+  ebookStatistics?: ChaptarrStatistics;
+}
+
+export interface ChaptarrStatistics {
+  bookCount?: number;
+  bookFileCount?: number;
+  totalBookCount?: number;
+  sizeOnDisk?: number;
+  percentOfBooks?: number;
+}
+
+export interface ChaptarrBook {
+  id: number;
+  title: string;
+  authorId: number;
+  authorTitle?: string;
+  /** Provider id, e.g. `hc:2707279`. Durable; prefer this over `id`. */
+  foreignBookId: string;
+  foreignEditionId?: string;
+  /** Which side of the library this row is. Never null on a library row. */
+  mediaType?: 'audiobook' | 'ebook';
+  monitored: boolean;
+  audiobookMonitored?: boolean;
+  ebookMonitored?: boolean;
+  overview?: string;
+  releaseDate?: string;
+  pageCount?: number;
+  genres?: string[];
+  ratings?: { votes: number; value: number };
+  hasFiles?: boolean;
+  seriesTitle?: string;
+  statistics?: ChaptarrStatistics;
+  // Audiobook-native metadata with no analogue in the other *arr apps.
+  narratorNames?: string[];
+  availableNarrators?: string[];
+  duration?: string;
+  durationMinutes?: number;
+  isOmnibus?: boolean;
+  // Discrete provider ids. Chaptarr resolves a book across providers, so a row
+  // can carry several; any of them resolves back to this row.
+  asin?: string;
+  audibleASIN?: string;
+  goodreadsWorkId?: string;
+  hardcoverBookId?: string;
+}
+
+export interface ChaptarrEdition {
+  id: number;
+  bookId: number;
+  title: string;
+  foreignEditionId?: string;
+  isbn13?: string;
+  asin?: string;
+  publisher?: string;
+  pageCount?: number;
+  monitored?: boolean;
+  isEbook?: boolean;
+}
+
+export interface ChaptarrSeries {
+  id: number;
+  title: string;
+  description?: string;
+  /** Provider id, e.g. `gr:398069`. Durable; prefer this over `id`. */
+  foreignSeriesId?: string;
+  localSeriesId?: string;
+  /** Which side of the library this series row belongs to. */
+  mediaType?: 'audiobook' | 'ebook';
+  workCount?: number;
+  primaryWorkCount?: number;
+  /** Reading order: one link per book, `seriesPosition` being its place. */
+  links?: Array<{
+    id: number;
+    bookId: number;
+    seriesId: number;
+    position?: string;
+    seriesPosition?: number;
+  }>;
+}
+
+export class ChaptarrClient extends ArrClient {
+  constructor(config: ArrConfig) {
+    super('chaptarr', config);
+    this.apiVersion = 'v1';
+  }
+
+  /** List library authors, optionally scoped to one side of the library. */
+  async getAuthors(mediaType?: ChaptarrMediaType): Promise<ChaptarrAuthor[]> {
+    return this['request']<ChaptarrAuthor[]>(withQuery('/author', [mediaTypeQuery(mediaType)]));
+  }
+
+  async getAuthorById(id: number): Promise<ChaptarrAuthor> {
+    return this['request']<ChaptarrAuthor>(`/author/${id}`);
+  }
+
+  /** Look up authors against Chaptarr's metadata pipeline (not in-library). */
+  async searchAuthors(term: string): Promise<ChaptarrAuthor[]> {
+    return this['request']<ChaptarrAuthor[]>(`/author/lookup?term=${encodeURIComponent(term)}`);
+  }
+
+  /** Look up books by title or ISBN against the metadata pipeline. */
+  async searchBooks(term: string): Promise<ChaptarrBook[]> {
+    return this['request']<ChaptarrBook[]>(`/book/lookup?term=${encodeURIComponent(term)}`);
+  }
+
+  async getBooks(authorId?: number, mediaType?: ChaptarrMediaType): Promise<ChaptarrBook[]> {
+    return this['request']<ChaptarrBook[]>(withQuery('/book', [
+      authorId !== undefined ? `authorId=${authorId}` : undefined,
+      mediaTypeQuery(mediaType),
+    ]));
+  }
+
+  /** Editions of one book - the physical/format variants Chaptarr tracks. */
+  async getEditions(bookId: number): Promise<ChaptarrEdition[]> {
+    return this['request']<ChaptarrEdition[]>(`/edition?bookId=${bookId}`);
+  }
+
+  /** Book series, optionally scoped to one author. */
+  async getSeries(authorId?: number): Promise<ChaptarrSeries[]> {
+    return this['request']<ChaptarrSeries[]>(
+      withQuery('/series', [authorId !== undefined ? `authorId=${authorId}` : undefined]));
+  }
+
+  async getMetadataProfiles(): Promise<MetadataProfile[]> {
+    return this['request']<MetadataProfile[]>('/metadataprofile');
+  }
+
+  async getMissing(page = 1, pageSize = 25, mediaType?: ChaptarrMediaType):
+    Promise<{ records: ChaptarrBook[]; totalRecords: number }> {
+    return this['request']<{ records: ChaptarrBook[]; totalRecords: number }>(
+      withQuery('/wanted/missing', [`page=${page}`, `pageSize=${pageSize}`, mediaTypeQuery(mediaType)]));
+  }
+
+  /**
+   * Add an author. Chaptarr takes monitoring and profiles per media side; the
+   * caller supplies whichever sides it wants created.
+   */
+  async addAuthor(author: {
+    foreignAuthorId: string;
+    rootFolderPath: string;
+    qualityProfileId: number;
+    metadataProfileId: number;
+    mediaType: 'audiobook' | 'ebook';
+    monitored?: boolean;
+  }): Promise<ChaptarrAuthor> {
+    const { mediaType, monitored = true, ...rest } = author;
+    const side = mediaType === 'ebook' ? 'ebook' : 'audiobook';
+    return this['request']<ChaptarrAuthor>('/author', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...rest,
+        monitored,
+        [`${side}Monitored`]: monitored,
+        [`${side}QualityProfileId`]: author.qualityProfileId,
+        [`${side}MetadataProfileId`]: author.metadataProfileId,
+        [`${side}RootFolderPath`]: author.rootFolderPath,
+        addOptions: { searchForNewBook: true },
+      }),
+    });
+  }
+
+  /** Trigger a download search for specific books. */
+  async triggerBookSearch(bookIds: number[]): Promise<{ id: number }> {
+    return this['request']<{ id: number }>('/command', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'BookSearch', bookIds }),
+    });
+  }
+
+  /** Trigger a download search for everything an author is missing. */
+  async searchMissing(authorId?: number, mediaType?: ChaptarrMediaType): Promise<{ id: number }> {
+    const scoped = mediaType && mediaType !== 'all' ? { mediaType } : {};
+    return this['request']<{ id: number }>('/command', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'MissingBookSearch',
+        ...(authorId !== undefined ? { authorId } : {}),
+        ...scoped,
+      }),
+    });
+  }
+
+  async refreshAuthor(authorId: number): Promise<{ id: number }> {
+    return this['request']<{ id: number }>('/command', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'RefreshAuthor', authorId }),
     });
   }
 }
