@@ -43,3 +43,6 @@ services:
       # Jellyseerr
       JELLYSEERR_URL: ${JELLYSEERR_URL:-}
       JELLYSEERR_API_KEY: ${JELLYSEERR_API_KEY:-}
+      # Bazarr
+      BAZARR_URL: ${BAZARR_URL:-}
+      BAZARR_API_KEY: ${BAZARR_API_KEY:-}

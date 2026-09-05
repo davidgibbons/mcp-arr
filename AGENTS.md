@@ -53,6 +53,8 @@ node dist/index.js
 | CHAPTARR_API_KEY | For Chaptarr | API key |
 | JELLYSEERR_URL | For Jellyseerr | Base URL (e.g. http://localhost:5055) |
 | JELLYSEERR_API_KEY | For Jellyseerr | API key |
+| BAZARR_URL | For Bazarr | Base URL (e.g. http://localhost:6767) |
+| BAZARR_API_KEY | For Bazarr | API key |
 
 ## Constraints
 
@@ -84,6 +86,16 @@ rules:
     description: Chaptarr holds audiobooks and eBooks in one instance; media type is identity, not a filter
     check: Library tools take mediaType (all|audiobook|ebook) validated by parseChaptarrMediaType before the call
     note: 'all' means an ABSENT query parameter, never mediaType=all on the wire
+
+  - id: bazarr-is-not-servarr
+    description: Bazarr's API is unversioned and inconsistently enveloped
+    check: BazarrClient sets apiVersion to '' so the base builds /api/... ; /api/v1/... returns the web UI's HTML with a 200, not a 404
+    note: Responses are bare, {data} or {data,total} depending on endpoint - always go through unwrap()/page()
+
+  - id: bazarr-pagination-mandatory
+    description: Bazarr listing endpoints have no server-side default page size
+    check: Every listing call sends start and length; measured unpaginated cost is 60-90s and megabytes
+    note: Never add a tool that lists Bazarr rows without pagination
 
   - id: jellyseerr-status-enums
     description: Jellyseerr sends status as an integer and the enums are wider than older docs
