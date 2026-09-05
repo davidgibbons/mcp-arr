@@ -71,6 +71,20 @@
           "format": "string",
           "isSecret": true,
           "name": "PROWLARR_API_KEY"
+        },
+        {
+          "description": "Whisparr server URL",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "WHISPARR_URL"
+        },
+        {
+          "description": "Whisparr API key",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "WHISPARR_API_KEY"
         }
       ]
     }

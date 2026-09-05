@@ -549,6 +549,179 @@
     }
   },
   {
+    "name": "whisparr_get_quality_profiles",
+    "description": "Get detailed quality profiles from Whisparr (Adult). Shows allowed qualities, upgrade settings, and custom format scores.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_get_health",
+    "description": "Get health check warnings and issues from Whisparr (Adult). Shows any problems detected by the application.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_get_root_folders",
+    "description": "Get root folders and storage info from Whisparr (Adult). Shows paths, free space, and unmapped folders.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_get_download_clients",
+    "description": "Get download client configurations from Whisparr (Adult). Shows configured clients and their settings.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_get_naming",
+    "description": "Get file naming configuration from Whisparr (Adult). Shows naming patterns for files and folders.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_get_tags",
+    "description": "Get all tags defined in Whisparr (Adult). Tags can be used to organize and filter content.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_review_setup",
+    "description": "Get comprehensive configuration review for Whisparr (Adult). Returns all settings for analysis: quality profiles, download clients, naming, storage, indexers, health warnings, and more. Use this to analyze the setup and suggest improvements.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_get_library",
+    "description": "Get the Whisparr library with optional pagination and title filtering. Items are sites on Whisparr V2 and scenes on V3 (Eros). Defaults to limit=25 to avoid very large responses.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number",
+          "description": "Maximum number of items to return (default: 25, max: 100)"
+        },
+        "offset": {
+          "type": "number",
+          "description": "Number of items to skip before returning results (default: 0)"
+        },
+        "search": {
+          "type": "string",
+          "description": "Optional case-insensitive title filter"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_search",
+    "description": "Search Whisparr's metadata provider for sites (V2) or scenes (V3) by name.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "term": {
+          "type": "string",
+          "description": "Search term"
+        }
+      },
+      "required": ["term"]
+    }
+  },
+  {
+    "name": "whisparr_get_scenes",
+    "description": "Get the scenes belonging to one site. Whisparr V2 only - on V3 (Eros) scenes are library items in their own right, so use whisparr_get_library instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "siteId": {
+          "type": "number",
+          "description": "Library id of the site"
+        }
+      },
+      "required": ["siteId"]
+    }
+  },
+  {
+    "name": "whisparr_get_queue",
+    "description": "Get the Whisparr download queue. Supports pagination with limit and offset.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number",
+          "description": "Maximum number of queue items to return (default: 25, max: 100)"
+        },
+        "offset": {
+          "type": "number",
+          "description": "Number of queue items to skip before returning results (default: 0)"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_get_calendar",
+    "description": "Get upcoming Whisparr releases",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "number",
+          "description": "Number of days to look ahead (default: 7)"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_search_item",
+    "description": "Trigger a download search for one Whisparr library item (a site on V2, a scene on V3).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "itemId": {
+          "type": "number",
+          "description": "Library id of the item, from whisparr_get_library"
+        }
+      },
+      "required": ["itemId"]
+    }
+  },
+  {
+    "name": "whisparr_refresh_item",
+    "description": "Trigger a metadata refresh for one Whisparr library item.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "itemId": {
+          "type": "number",
+          "description": "Library id of the item, from whisparr_get_library"
+        }
+      },
+      "required": ["itemId"]
+    }
+  },
+  {
     "name": "trash_list_profiles",
     "description": "List available TRaSH Guides quality profiles for Radarr or Sonarr",
     "inputSchema": {

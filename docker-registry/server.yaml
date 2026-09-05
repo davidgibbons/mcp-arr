@@ -8,13 +8,14 @@ meta:
     - radarr
     - lidarr
     - prowlarr
+    - whisparr
     - media-management
     - plex
     - homelab
     - entertainment
 about:
   title: "*arr Media Management"
-  description: "MCP server for the *arr media management suite - Sonarr (TV), Radarr (Movies), Lidarr (Music), and Prowlarr (Indexers). Manage your media library, search for content, monitor downloads, and get AI-powered configuration recommendations using TRaSH Guides."
+  description: "MCP server for the *arr media management suite - Sonarr (TV), Radarr (Movies), Lidarr (Music), Prowlarr (Indexers), and Whisparr (Adult). Manage your media library, search for content, monitor downloads, and get AI-powered configuration recommendations using TRaSH Guides."
   icon: https://wiki.servarr.com/assets/servarr.png
 source:
   project: https://github.com/aplaceforallmystuff/mcp-arr
@@ -37,6 +38,9 @@ config:
     - name: PROWLARR_URL
       description: "Prowlarr base URL (e.g., http://localhost:9696 or http://prowlarr:9696)"
       example: "http://localhost:9696"
+    - name: WHISPARR_URL
+      description: "Whisparr base URL (e.g., http://localhost:6969 or http://whisparr:6969)"
+      example: "http://localhost:6969"
   secrets:
     - name: arr.sonarr-api-key
       env: SONARR_API_KEY
@@ -54,3 +58,7 @@ config:
       env: PROWLARR_API_KEY
       description: "Prowlarr API key from Settings > General > Security"
       example: "<your-prowlarr-api-key>"
+    - name: arr.whisparr-api-key
+      env: WHISPARR_API_KEY
+      description: "Whisparr API key from Settings > General > Security"
+      example: "<your-whisparr-api-key>"

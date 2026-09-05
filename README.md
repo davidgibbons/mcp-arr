@@ -12,7 +12,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 
-MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, and Prowlarr.
+MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, Prowlarr, and Whisparr.
 
 Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP mode for hosted MCP clients such as ChatGPT connectors.
 
@@ -34,6 +34,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
 | **Radarr (Movies)** | List movies, search films, trigger downloads, check queue, view releases, review setup |
 | **Lidarr (Music)** | List artists, view albums, search musicians, trigger downloads, check queue, view calendar, review setup |
 | **Prowlarr (Indexers)** | List indexers, search across all trackers, test health, view statistics |
+| **Whisparr (Adult)** | List library, search sites/scenes, trigger downloads, check queue, view calendar, review setup - works with both V2 and V3 (Eros) |
 | **Cross-Service** | Status check, unified search across all configured services |
 | **Configuration** | Quality profiles, download clients, naming conventions, health checks, storage info |
 | **TRaSH Guides** | Reference quality profiles, custom formats, naming conventions, compare against recommendations |
@@ -46,6 +47,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
   - [Radarr](https://radarr.video/) for movies
   - [Lidarr](https://lidarr.audio/) for music
   - [Prowlarr](https://prowlarr.com/) for indexer management
+  - [Whisparr](https://whisparr.com/) for adult media (V2 or V3 "Eros")
 
 ## Installation
 
@@ -171,7 +173,9 @@ Add to your Claude Desktop config file:
         "LIDARR_URL": "http://localhost:8686",
         "LIDARR_API_KEY": "your-lidarr-api-key",
         "PROWLARR_URL": "http://localhost:9696",
-        "PROWLARR_API_KEY": "your-prowlarr-api-key"
+        "PROWLARR_API_KEY": "your-prowlarr-api-key",
+        "WHISPARR_URL": "http://localhost:6969",
+        "WHISPARR_API_KEY": "your-whisparr-api-key"
       }
     }
   }
@@ -333,9 +337,23 @@ The existing service-specific tools remain available for richer local or power-u
 | `prowlarr_test_indexers` | Test all indexers and return health status |
 | `prowlarr_get_stats` | Get indexer statistics (queries, grabs, failures) |
 
+### Whisparr Tools (Adult)
+
+Whisparr ships as two incompatible applications and the server detects which one you run from `/system/status`, so the same tools work against either. Library items are **sites** on V2 (a Sonarr fork) and **scenes** on V3 "Eros" (a Radarr fork); every response reports which variant answered.
+
+| Tool | Description |
+|------|-------------|
+| `whisparr_get_library` | List the library with `limit`, `offset` and `search` filtering |
+| `whisparr_search` | Search the metadata provider for sites (V2) or scenes (V3) |
+| `whisparr_get_scenes` | List the scenes belonging to one site (**V2 only** - on V3 scenes are library items) |
+| `whisparr_get_queue` | View current download queue with `limit` and `offset` pagination |
+| `whisparr_get_calendar` | See upcoming releases |
+| `whisparr_search_item` | Trigger a download search for one library item |
+| `whisparr_refresh_item` | Trigger a metadata refresh for one library item |
+
 ### Configuration Review Tools
 
-These tools are available for Sonarr, Radarr, and Lidarr. Replace `{service}` with the service name (e.g., `sonarr_get_quality_profiles`).
+These tools are available for Sonarr, Radarr, Lidarr, and Whisparr. Replace `{service}` with the service name (e.g., `sonarr_get_quality_profiles`).
 
 | Tool | Description |
 |------|-------------|

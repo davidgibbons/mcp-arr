@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Whisparr support.** Set `WHISPARR_URL` and `WHISPARR_API_KEY` and Whisparr joins `arr_status`, the unified `search`/`fetch` tools, `arr_search_all`, and the shared configuration review tools, alongside seven Whisparr-specific tools (`whisparr_get_library`, `whisparr_search`, `whisparr_get_scenes`, `whisparr_get_queue`, `whisparr_get_calendar`, `whisparr_search_item`, `whisparr_refresh_item`).
+
+  Whisparr ships as two incompatible applications that both answer on `/api/v3`: V2 is a Sonarr fork (`/series`, `/episode`, `SeriesSearch`) and V3 "Eros" is a Radarr fork (`/movie`, `MoviesSearch`). Rather than asking operators to declare which they run, the client resolves it from `/system/status` on first use and caches it, so the same tool names work against either. Library items are sites on V2 and scenes on V3, and every response reports which variant answered. Anything not reporting a 2.x version is treated as Eros, so a future major keeps working without a code change.
+
+  Whisparr only appears in the generic search tools when it is configured, so an operator who has not opted in never sees adult results.
+
 ## [1.7.3] - 2026-07-29
 
 ### Fixed

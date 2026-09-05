@@ -1,6 +1,6 @@
 # AGENTS.md - mcp-arr
 
-MCP server for the *arr media management suite (Sonarr, Radarr, Lidarr, Prowlarr).
+MCP server for the *arr media management suite (Sonarr, Radarr, Lidarr, Prowlarr, Whisparr).
 
 ## Tech Stack
 
@@ -47,6 +47,8 @@ node dist/index.js
 | LIDARR_API_KEY | For Lidarr | API key |
 | PROWLARR_URL | For Prowlarr | Base URL |
 | PROWLARR_API_KEY | For Prowlarr | API key |
+| WHISPARR_URL | For Whisparr | Base URL (e.g. http://localhost:6969) |
+| WHISPARR_API_KEY | For Whisparr | API key |
 
 ## Constraints
 
@@ -69,6 +71,10 @@ rules:
       - Check for missing env vars before API call
       - Return meaningful error messages
       - Don't expose raw API errors to users
+
+  - id: whisparr-variant-detection
+    description: Whisparr V2 (Sonarr fork) and V3 "Eros" (Radarr fork) both answer on /api/v3
+    check: Never add a WHISPARR_VERSION env var - WhisparrClient.getVariant() resolves it from /system/status and caches it
 
   - id: trash-guides-integration
     description: TRaSH Guides tools use embedded guide data
