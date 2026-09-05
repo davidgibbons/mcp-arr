@@ -228,6 +228,7 @@ function addConfigTools(serviceName: string, displayName: string) {
 if (clients.sonarr) addConfigTools('sonarr', 'Sonarr (TV)');
 if (clients.radarr) addConfigTools('radarr', 'Radarr (Movies)');
 if (clients.lidarr) addConfigTools('lidarr', 'Lidarr (Music)');
+if (clients.whisparr) addConfigTools('whisparr', 'Whisparr (Adult)');
 
 // Sonarr tools
 if (clients.sonarr) {
@@ -1193,7 +1194,7 @@ async function fetchSearchEntry(id: string): Promise<unknown> {
   throw new Error(`Unsupported or unavailable fetch target '${id}'`);
 }
 
-type QueueCapableClient = SonarrClient | RadarrClient | LidarrClient;
+type QueueCapableClient = SonarrClient | RadarrClient | LidarrClient | WhisparrClient;
 
 async function getPaginatedQueue(
   client: QueueCapableClient,
@@ -1303,7 +1304,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Quality Profiles
       case "sonarr_get_quality_profiles":
       case "radarr_get_quality_profiles":
-      case "lidarr_get_quality_profiles": {
+      case "lidarr_get_quality_profiles":
+      case "whisparr_get_quality_profiles": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1337,7 +1339,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Health checks
       case "sonarr_get_health":
       case "radarr_get_health":
-      case "lidarr_get_health": {
+      case "lidarr_get_health":
+      case "whisparr_get_health": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1362,7 +1365,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Root folders
       case "sonarr_get_root_folders":
       case "radarr_get_root_folders":
-      case "lidarr_get_root_folders": {
+      case "lidarr_get_root_folders":
+      case "whisparr_get_root_folders": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1388,7 +1392,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Download clients
       case "sonarr_get_download_clients":
       case "radarr_get_download_clients":
-      case "lidarr_get_download_clients": {
+      case "lidarr_get_download_clients":
+      case "whisparr_get_download_clients": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1417,7 +1422,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Naming config
       case "sonarr_get_naming":
       case "radarr_get_naming":
-      case "lidarr_get_naming": {
+      case "lidarr_get_naming":
+      case "whisparr_get_naming": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1433,7 +1439,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Tags
       case "sonarr_get_tags":
       case "radarr_get_tags":
-      case "lidarr_get_tags": {
+      case "lidarr_get_tags":
+      case "whisparr_get_tags": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1452,7 +1459,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Comprehensive setup review
       case "sonarr_review_setup":
       case "radarr_review_setup":
-      case "lidarr_review_setup": {
+      case "lidarr_review_setup":
+      case "whisparr_review_setup": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
