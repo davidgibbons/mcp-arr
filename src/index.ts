@@ -835,6 +835,126 @@ if (clients.prowlarr) {
   );
 }
 
+// Whisparr tools
+//
+// Whisparr's library items are sites under V2 and scenes under V3, so the
+// tools are named for the neutral "library item" and each response reports
+// which variant answered.
+if (clients.whisparr) {
+  TOOLS.push(
+    {
+      name: "whisparr_get_library",
+      description: "Get the Whisparr library with optional pagination and title filtering. Items are sites on Whisparr V2 and scenes on V3 (Eros). Defaults to limit=25 to avoid very large responses.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          limit: {
+            type: "number",
+            description: "Maximum number of items to return (default: 25, max: 100)",
+          },
+          offset: {
+            type: "number",
+            description: "Number of items to skip before returning results (default: 0)",
+          },
+          search: {
+            type: "string",
+            description: "Optional case-insensitive title filter",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "whisparr_search",
+      description: "Search Whisparr's metadata provider for sites (V2) or scenes (V3) by name.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          term: {
+            type: "string",
+            description: "Search term",
+          },
+        },
+        required: ["term"],
+      },
+    },
+    {
+      name: "whisparr_get_scenes",
+      description: "Get the scenes belonging to one site. Whisparr V2 only - on V3 (Eros) scenes are library items in their own right, so use whisparr_get_library instead.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          siteId: {
+            type: "number",
+            description: "Library id of the site",
+          },
+        },
+        required: ["siteId"],
+      },
+    },
+    {
+      name: "whisparr_get_queue",
+      description: "Get the Whisparr download queue. Supports pagination with limit and offset.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          limit: {
+            type: "number",
+            description: "Maximum number of queue items to return (default: 25, max: 100)",
+          },
+          offset: {
+            type: "number",
+            description: "Number of queue items to skip before returning results (default: 0)",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "whisparr_get_calendar",
+      description: "Get upcoming Whisparr releases",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          days: {
+            type: "number",
+            description: "Number of days to look ahead (default: 7)",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "whisparr_search_item",
+      description: "Trigger a download search for one Whisparr library item (a site on V2, a scene on V3).",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          itemId: {
+            type: "number",
+            description: "Library id of the item, from whisparr_get_library",
+          },
+        },
+        required: ["itemId"],
+      },
+    },
+    {
+      name: "whisparr_refresh_item",
+      description: "Trigger a metadata refresh for one Whisparr library item.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          itemId: {
+            type: "number",
+            description: "Library id of the item, from whisparr_get_library",
+          },
+        },
+        required: ["itemId"],
+      },
+    }
+  );
+}
+
 // Cross-service search tool
 TOOLS.push({
   name: "arr_search_all",
@@ -2246,6 +2366,115 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // Cross-service search
+      // Whisparr handlers
+      case "whisparr_get_library": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const { limit = 25, offset = 0, search } = args as {
+          limit?: number;
+          offset?: number;
+          search?: string;
+        };
+        const normalizedLimit = Math.max(1, Math.min(limit, 100));
+        const normalizedOffset = Math.max(0, offset);
+        const filter = search?.trim().toLowerCase();
+
+        const variant = await clients.whisparr.getVariant();
+        const allItems = await clients.whisparr.getLibrary();
+        const filteredItems = filter
+          ? allItems.filter(i => i.title.toLowerCase().includes(filter))
+          : allItems;
+        const pagedItems = filteredItems.slice(normalizedOffset, normalizedOffset + normalizedLimit);
+        return jsonText({
+          variant,
+          itemType: variant === 'v2' ? 'site' : 'scene',
+          total: allItems.length,
+          filteredCount: filteredItems.length,
+          returned: pagedItems.length,
+          offset: normalizedOffset,
+          limit: normalizedLimit,
+          hasMore: normalizedOffset + normalizedLimit < filteredItems.length,
+          nextOffset: normalizedOffset + normalizedLimit < filteredItems.length
+            ? normalizedOffset + normalizedLimit
+            : null,
+          search: search ?? null,
+          items: pagedItems.map(item => ({
+            id: item.id,
+            title: item.title,
+            year: item.year,
+            status: item.status,
+            monitored: item.monitored,
+            path: item.path,
+            // Series keeps its totals under statistics, Movie reports them flat.
+            sizeOnDisk: formatBytes(
+              ('statistics' in item ? item.statistics?.sizeOnDisk : item.sizeOnDisk) || 0
+            ),
+          })),
+        });
+      }
+
+      case "whisparr_search": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const term = (args as { term: string }).term;
+        const variant = await clients.whisparr.getVariant();
+        const results = await clients.whisparr.searchLibrary(term);
+        return jsonText({
+          variant,
+          itemType: variant === 'v2' ? 'site' : 'scene',
+          count: results.length,
+          results: results.slice(0, 10).map(r => ({
+            title: r.title,
+            year: r.year,
+            tvdbId: r.tvdbId,
+            tmdbId: r.tmdbId,
+            imdbId: r.imdbId,
+            overview: r.overview?.substring(0, 200) + (r.overview && r.overview.length > 200 ? '...' : ''),
+          })),
+        });
+      }
+
+      case "whisparr_get_scenes": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const siteId = (args as { siteId: number }).siteId;
+        const scenes = await clients.whisparr.getScenes(siteId);
+        return jsonText({
+          count: scenes.length,
+          scenes: scenes.map(e => ({
+            id: e.id,
+            title: e.title,
+            airDate: e.airDate,
+            hasFile: e.hasFile,
+            monitored: e.monitored,
+          })),
+        });
+      }
+
+      case "whisparr_get_queue": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        return jsonText(await getPaginatedQueue(clients.whisparr, args as { limit?: number; offset?: number }));
+      }
+
+      case "whisparr_get_calendar": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const days = (args as { days?: number })?.days || 7;
+        const start = new Date().toISOString().split('T')[0];
+        const end = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        return jsonText(await clients.whisparr.getCalendar(start, end));
+      }
+
+      case "whisparr_search_item": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const itemId = (args as { itemId: number }).itemId;
+        const result = await clients.whisparr.searchItem(itemId);
+        return jsonText({ triggered: true, commandId: result.id, itemId });
+      }
+
+      case "whisparr_refresh_item": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const itemId = (args as { itemId: number }).itemId;
+        const result = await clients.whisparr.refreshItem(itemId);
+        return jsonText({ triggered: true, commandId: result.id, itemId });
+      }
+
       case "arr_search_all": {
         const term = (args as { term: string }).term;
         const results: Record<string, unknown> = {};
