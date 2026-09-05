@@ -37,3 +37,6 @@ services:
       # Whisparr
       WHISPARR_URL: ${WHISPARR_URL:-}
       WHISPARR_API_KEY: ${WHISPARR_API_KEY:-}
+      # Chaptarr
+      CHAPTARR_URL: ${CHAPTARR_URL:-}
+      CHAPTARR_API_KEY: ${CHAPTARR_API_KEY:-}

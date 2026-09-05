@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Chaptarr support** (audiobooks and eBooks). [Chaptarr](https://github.com/Chaptarr/chaptarr) is an
+  actively developed Readarr fork — Readarr itself was archived by its maintainers on 2025-06-27 — and it
+  holds both media types in one instance, so media type is part of identity rather than a filter: the same
+  title can be an audiobook row *and* an eBook row with separate monitoring, profiles and root folders.
+  15 Chaptarr tools plus the shared configuration set, wired into `arr_search_all`, behind
+  `CHAPTARR_URL` / `CHAPTARR_API_KEY`.
+  - Library tools take `mediaType` (`all` | `audiobook` | `ebook`), validated client-side so a typo fails
+    locally instead of costing a 400. `all` means an *absent* query parameter, never `mediaType=all`.
+  - Every response reports the provider id (`foreignAuthorId` / `foreignBookId` / `foreignSeriesId`, plus
+    discrete Hardcover/Goodreads/ASIN/Audible ids on books) alongside the local `id`. Chaptarr's contract
+    states local row ids change when metadata is repaired or merged, so callers should key on the provider id.
+  - `chaptarr_add_author` requires a `mediaType` and writes the media-scoped fields for that side only;
+    an audiobook add never initialises the eBook side.
+  - Audiobook-native metadata (narrators, duration, omnibus flag) and Chaptarr-native concepts (editions,
+    book series with reading order) are exposed rather than flattened away.
+
 ### Changed
 
 - **Everything moves to Node 24.** Node 20 reached end of life on 2026-04-30; Node 24 is the current
@@ -21,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Lidarr advertised two tools twice.** `lidarr_get_quality_profiles` and `lidarr_get_root_folders` were
+  pushed both by the shared `addConfigTools()` helper and by the Lidarr-specific block, so any server with
+  Lidarr configured returned duplicate tool names from `tools/list`. Their second handler cases sat in the
+  same `switch` as the shared ones and were therefore unreachable dead code. Removed the duplicate
+  definitions and the dead cases; runtime behaviour is unchanged because the shared cases always won.
+  This one is upstream's too and is being sent up separately.
 - **Node 18 was advertised as supported but does not work.** The HTTP transport regression test fails on
   Node 18 with `400 !== 200` — the very "Mcp-Session-Id header is required" bug it was written to catch.
   CI built and type-checked but never ran `node --test`, so this went unnoticed; it reproduces under

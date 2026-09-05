@@ -3,7 +3,7 @@
  * MCP Server for *arr Media Management Suite
  *
  * Provides tools for managing Sonarr (TV), Radarr (Movies), Lidarr (Music),
- * and Prowlarr (Indexers) through Claude Code.
+ * Prowlarr (Indexers), Whisparr (Adult) and Chaptarr (Books) through Claude Code.
  *
  * Environment variables:
  * - SONARR_URL, SONARR_API_KEY
@@ -11,6 +11,7 @@
  * - LIDARR_URL, LIDARR_API_KEY
  * - PROWLARR_URL, PROWLARR_API_KEY
  * - WHISPARR_URL, WHISPARR_API_KEY
+ * - CHAPTARR_URL, CHAPTARR_API_KEY
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -29,6 +30,11 @@ import {
   LidarrClient,
   ProwlarrClient,
   WhisparrClient,
+  ChaptarrClient,
+  parseChaptarrMediaType,
+  ChaptarrMediaType,
+  ChaptarrAuthor,
+  ChaptarrBook,
   whisparrItemKey,
   whisparrFileCount,
   whisparrSizeOnDisk,
@@ -76,6 +82,7 @@ const services: ServiceConfig[] = [
   { name: 'lidarr', displayName: 'Lidarr (Music)', url: process.env.LIDARR_URL, apiKey: process.env.LIDARR_API_KEY },
   { name: 'prowlarr', displayName: 'Prowlarr (Indexers)', url: process.env.PROWLARR_URL, apiKey: process.env.PROWLARR_API_KEY },
   { name: 'whisparr', displayName: 'Whisparr (Adult)', url: process.env.WHISPARR_URL, apiKey: process.env.WHISPARR_API_KEY },
+  { name: 'chaptarr', displayName: 'Chaptarr (Books)', url: process.env.CHAPTARR_URL, apiKey: process.env.CHAPTARR_API_KEY },
 ];
 
 // Check which services are configured
@@ -88,6 +95,7 @@ const clients: {
   lidarr?: LidarrClient;
   prowlarr?: ProwlarrClient;
   whisparr?: WhisparrClient;
+  chaptarr?: ChaptarrClient;
 } = {};
 
 for (const service of configuredServices) {
@@ -107,6 +115,9 @@ for (const service of configuredServices) {
       break;
     case 'whisparr':
       clients.whisparr = new WhisparrClient(config);
+      break;
+    case 'chaptarr':
+      clients.chaptarr = new ChaptarrClient(config);
       break;
   }
 }
@@ -241,6 +252,7 @@ if (clients.sonarr) addConfigTools('sonarr', 'Sonarr (TV)');
 if (clients.radarr) addConfigTools('radarr', 'Radarr (Movies)');
 if (clients.lidarr) addConfigTools('lidarr', 'Lidarr (Music)');
 if (clients.whisparr) addConfigTools('whisparr', 'Whisparr (Adult)');
+if (clients.chaptarr) addConfigTools('chaptarr', 'Chaptarr (Books)');
 
 // Sonarr tools
 if (clients.sonarr) {
@@ -771,24 +783,6 @@ if (clients.lidarr) {
       },
     },
     {
-      name: "lidarr_get_root_folders",
-      description: "Get available root folders for Lidarr. Use this to find valid rootFolderPath values when adding an artist.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {},
-        required: [],
-      },
-    },
-    {
-      name: "lidarr_get_quality_profiles",
-      description: "Get available quality profiles for Lidarr. Use this to find valid qualityProfileId values when adding an artist.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {},
-        required: [],
-      },
-    },
-    {
       name: "lidarr_get_metadata_profiles",
       description: "Get available metadata profiles for Lidarr. Use this to find valid metadataProfileId values when adding an artist.",
       inputSchema: {
@@ -1047,6 +1041,221 @@ if (clients.whisparr) {
   );
 }
 
+// Chaptarr tools
+//
+// Chaptarr is a Readarr fork holding audiobooks and eBooks in one instance.
+// Media type is part of identity rather than a filter - the same title can be
+// both an audiobook row and an eBook row - so library tools take a mediaType.
+//
+// Results report `foreignBookId`/`foreignAuthorId` (provider ids such as
+// `hc:2707279`) alongside the local `id`. Provider ids are the durable
+// identity; local ids can change when Chaptarr repairs or merges metadata, so
+// anything cached across turns should key on the provider id.
+if (clients.chaptarr) {
+  TOOLS.push(
+    {
+      name: "chaptarr_get_authors",
+      description: "Get authors from the Chaptarr library with optional pagination and name filtering. Defaults to limit=25 to avoid very large responses.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          limit: { type: "number", description: "Maximum number of authors to return (default: 25, max: 100)" },
+          offset: { type: "number", description: "Number of authors to skip before returning results (default: 0)" },
+          search: { type: "string", description: "Optional case-insensitive author name filter" },
+          mediaType: {
+            type: "string",
+            enum: ["all", "audiobook", "ebook"],
+            description: "Which side of the library to scope to. Chaptarr keeps separate rows for the audiobook and eBook of the same title. Default: all.",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "chaptarr_get_author",
+      description: "Get one Chaptarr author by local id, including per-media-type monitoring, profiles and statistics.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          authorId: { type: "number", description: "Local Chaptarr author id" },
+        },
+        required: ["authorId"],
+      },
+    },
+    {
+      name: "chaptarr_get_books",
+      description: "Get books from the Chaptarr library, optionally for one author. Each book reports its mediaType, narrators and duration for audiobooks, and provider ids. Defaults to limit=25.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          authorId: { type: "number", description: "Optional local author id to scope to" },
+          limit: { type: "number", description: "Maximum number of books to return (default: 25, max: 100)" },
+          offset: { type: "number", description: "Number of books to skip before returning results (default: 0)" },
+          search: { type: "string", description: "Optional case-insensitive title filter" },
+          mediaType: {
+            type: "string",
+            enum: ["all", "audiobook", "ebook"],
+            description: "Which side of the library to scope to. Chaptarr keeps separate rows for the audiobook and eBook of the same title. Default: all.",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "chaptarr_search",
+      description: "Search Chaptarr's metadata pipeline for authors by name. Returns foreignAuthorId values needed to add an author.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          term: { type: "string", description: "Author name to look up" },
+        },
+        required: ["term"],
+      },
+    },
+    {
+      name: "chaptarr_search_book",
+      description: "Search Chaptarr's metadata pipeline for books by title or ISBN.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          term: { type: "string", description: "Book title or ISBN to look up" },
+        },
+        required: ["term"],
+      },
+    },
+    {
+      name: "chaptarr_get_editions",
+      description: "Get the editions of one Chaptarr book. Editions are the per-format/per-publisher variants Chaptarr tracks under a single book, and are how the audiobook and eBook of a title differ in practice.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          bookId: { type: "number", description: "Local Chaptarr book id" },
+        },
+        required: ["bookId"],
+      },
+    },
+    {
+      name: "chaptarr_get_series",
+      description: "Get book series known to Chaptarr, optionally scoped to one author. Series carry the reading order Chaptarr uses to organise a library.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          authorId: { type: "number", description: "Optional local author id to scope to" },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "chaptarr_get_queue",
+      description: "Get the Chaptarr download queue with pagination.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          page: { type: "number", description: "Page number (default: 1)" },
+          pageSize: { type: "number", description: "Records per page (default: 25, max: 100)" },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "chaptarr_get_missing",
+      description: "Get monitored Chaptarr books that have no file yet, with pagination.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          page: { type: "number", description: "Page number (default: 1)" },
+          pageSize: { type: "number", description: "Records per page (default: 25, max: 100)" },
+          mediaType: {
+            type: "string",
+            enum: ["all", "audiobook", "ebook"],
+            description: "Which side of the library to scope to. Chaptarr keeps separate rows for the audiobook and eBook of the same title. Default: all.",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "chaptarr_get_calendar",
+      description: "Get upcoming Chaptarr book releases in a date range.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          start: { type: "string", description: "Start date, ISO 8601 (e.g. 2026-09-01)" },
+          end: { type: "string", description: "End date, ISO 8601 (e.g. 2026-09-30)" },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "chaptarr_add_author",
+      description: "Add an author to Chaptarr. Requires a foreignAuthorId from chaptarr_search, and the media type decides which side of the library the author is created on - Chaptarr keeps audiobook and eBook settings separately.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          foreignAuthorId: { type: "string", description: "Provider id from chaptarr_search, e.g. hc:880167" },
+          rootFolderPath: { type: "string", description: "Root folder path from chaptarr_get_root_folders" },
+          qualityProfileId: { type: "number", description: "Quality profile id from chaptarr_get_quality_profiles" },
+          metadataProfileId: { type: "number", description: "Metadata profile id from chaptarr_get_metadata_profiles" },
+          mediaType: {
+            type: "string",
+            enum: ["audiobook", "ebook"],
+            description: "Which side of the library to create the author on. Required - Chaptarr will not guess.",
+          },
+          monitored: { type: "boolean", description: "Whether to monitor for new books (default: true)" },
+        },
+        required: ["foreignAuthorId", "rootFolderPath", "qualityProfileId", "metadataProfileId", "mediaType"],
+      },
+    },
+    {
+      name: "chaptarr_get_metadata_profiles",
+      description: "Get Chaptarr metadata profiles, which control which languages and release kinds are allowed into the library.",
+      inputSchema: { type: "object" as const, properties: {}, required: [] },
+    },
+    {
+      name: "chaptarr_trigger_book_search",
+      description: "Trigger a download search for specific Chaptarr books by local book id.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          bookIds: {
+            type: "array",
+            items: { type: "number" },
+            description: "Local Chaptarr book ids to search for",
+          },
+        },
+        required: ["bookIds"],
+      },
+    },
+    {
+      name: "chaptarr_search_missing",
+      description: "Trigger a download search for missing Chaptarr books, optionally scoped to one author and/or one media type.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          authorId: { type: "number", description: "Optional local author id to scope the search to" },
+          mediaType: {
+            type: "string",
+            enum: ["all", "audiobook", "ebook"],
+            description: "Which side of the library to scope to. Chaptarr keeps separate rows for the audiobook and eBook of the same title. Default: all.",
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: "chaptarr_refresh_author",
+      description: "Refresh one Chaptarr author's metadata and rescan its files.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          authorId: { type: "number", description: "Local Chaptarr author id" },
+        },
+        required: ["authorId"],
+      },
+    }
+  );
+}
+
 // Cross-service search tool
 TOOLS.push({
   name: "arr_search_all",
@@ -1239,6 +1448,87 @@ type SearchEntry = {
 
 function buildResourceUrl(path: string): string {
   return `mcp-arr://${path}`;
+}
+
+/**
+ * Flatten a Chaptarr author for a tool response.
+ *
+ * Chaptarr emits both the legacy combined fields (`monitored`, `tags`,
+ * `statistics`) and media-scoped pairs. The pairs are the truth for a library
+ * that holds both an audiobook and an eBook side, so both are reported and the
+ * scoped ones are grouped under `audiobook`/`ebook` rather than left as a flat
+ * wall of lookalike keys.
+ */
+function summarizeChaptarrAuthor(a: ChaptarrAuthor) {
+  const side = (monitored?: boolean, qualityProfileId?: number,
+                metadataProfileId?: number, rootFolderPath?: string,
+                tags?: number[], stats?: { bookCount?: number; bookFileCount?: number; sizeOnDisk?: number }) => ({
+    monitored: monitored ?? null,
+    qualityProfileId: qualityProfileId ?? null,
+    metadataProfileId: metadataProfileId ?? null,
+    rootFolderPath: rootFolderPath ?? null,
+    tags: tags ?? [],
+    bookCount: stats?.bookCount ?? null,
+    bookFileCount: stats?.bookFileCount ?? null,
+    sizeOnDisk: stats?.sizeOnDisk ?? null,
+  });
+
+  return {
+    id: a.id ?? null,
+    // Durable identity. Prefer this over `id` for anything cached or matched.
+    foreignAuthorId: a.foreignAuthorId ?? null,
+    authorName: a.authorName,
+    sortName: a.sortName,
+    status: a.status,
+    monitored: a.monitored,
+    path: a.path ?? null,
+    genres: a.genres ?? [],
+    added: a.added ?? null,
+    ratings: a.ratings ?? null,
+    audiobook: side(a.audiobookMonitored, a.audiobookQualityProfileId,
+                    a.audiobookMetadataProfileId, a.audiobookRootFolderPath,
+                    a.audiobookTags, a.audiobookStatistics),
+    ebook: side(a.ebookMonitored, a.ebookQualityProfileId,
+                a.ebookMetadataProfileId, a.ebookRootFolderPath,
+                a.ebookTags, a.ebookStatistics),
+  };
+}
+
+/**
+ * Flatten a Chaptarr book for a tool response. Audiobook-only metadata
+ * (narrators, duration) is reported when present and null otherwise, so a
+ * caller can tell "no narrator recorded" from "this is an eBook".
+ */
+function summarizeChaptarrBook(b: ChaptarrBook) {
+  return {
+    id: b.id ?? null,
+    // Durable identity; see summarizeChaptarrAuthor.
+    foreignBookId: b.foreignBookId ?? null,
+    title: b.title,
+    authorId: b.authorId,
+    authorTitle: b.authorTitle ?? null,
+    mediaType: b.mediaType ?? null,
+    monitored: b.monitored,
+    audiobookMonitored: b.audiobookMonitored ?? null,
+    ebookMonitored: b.ebookMonitored ?? null,
+    hasFiles: b.hasFiles ?? null,
+    releaseDate: b.releaseDate ?? null,
+    seriesTitle: b.seriesTitle ?? null,
+    pageCount: b.pageCount ?? null,
+    isOmnibus: b.isOmnibus ?? null,
+    narrators: b.narratorNames ?? null,
+    duration: b.duration ?? null,
+    durationMinutes: b.durationMinutes ?? null,
+    ratings: b.ratings ?? null,
+    // Chaptarr resolves a title across providers; any of these resolves back.
+    providerIds: {
+      hardcover: b.hardcoverBookId ?? null,
+      goodreadsWork: b.goodreadsWorkId ?? null,
+      asin: b.asin ?? null,
+      audibleAsin: b.audibleASIN ?? null,
+      edition: b.foreignEditionId ?? null,
+    },
+  };
 }
 
 function jsonText(data: unknown) {
@@ -1554,7 +1844,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sonarr_get_quality_profiles":
       case "radarr_get_quality_profiles":
       case "lidarr_get_quality_profiles":
-      case "whisparr_get_quality_profiles": {
+      case "whisparr_get_quality_profiles":
+      case "chaptarr_get_quality_profiles": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1589,7 +1880,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sonarr_get_remote_path_mappings":
       case "radarr_get_remote_path_mappings":
       case "lidarr_get_remote_path_mappings":
-      case "whisparr_get_remote_path_mappings": {
+      case "whisparr_get_remote_path_mappings":
+      case "chaptarr_get_remote_path_mappings": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1632,7 +1924,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sonarr_get_health":
       case "radarr_get_health":
       case "lidarr_get_health":
-      case "whisparr_get_health": {
+      case "whisparr_get_health":
+      case "chaptarr_get_health": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1658,7 +1951,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sonarr_get_root_folders":
       case "radarr_get_root_folders":
       case "lidarr_get_root_folders":
-      case "whisparr_get_root_folders": {
+      case "whisparr_get_root_folders":
+      case "chaptarr_get_root_folders": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1685,7 +1979,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sonarr_get_download_clients":
       case "radarr_get_download_clients":
       case "lidarr_get_download_clients":
-      case "whisparr_get_download_clients": {
+      case "whisparr_get_download_clients":
+      case "chaptarr_get_download_clients": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1715,7 +2010,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sonarr_get_naming":
       case "radarr_get_naming":
       case "lidarr_get_naming":
-      case "whisparr_get_naming": {
+      case "whisparr_get_naming":
+      case "chaptarr_get_naming": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1732,7 +2028,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sonarr_get_tags":
       case "radarr_get_tags":
       case "lidarr_get_tags":
-      case "whisparr_get_tags": {
+      case "whisparr_get_tags":
+      case "chaptarr_get_tags": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1752,7 +2049,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sonarr_review_setup":
       case "radarr_review_setup":
       case "lidarr_review_setup":
-      case "whisparr_review_setup": {
+      case "whisparr_review_setup":
+      case "chaptarr_review_setup": {
         const serviceName = name.split('_')[0] as keyof typeof clients;
         const client = clients[serviceName];
         if (!client) throw new Error(`${serviceName} not configured`);
@@ -1771,10 +2069,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           client.getIndexers(),
         ]);
 
-        // For Lidarr, also get metadata profiles
+        // Lidarr and Chaptarr both carry metadata profiles; the others do not.
         let metadataProfiles = null;
         if (serviceName === 'lidarr' && clients.lidarr) {
           metadataProfiles = await clients.lidarr.getMetadataProfiles();
+        } else if (serviceName === 'chaptarr' && clients.chaptarr) {
+          metadataProfiles = await clients.chaptarr.getMetadataProfiles();
         }
 
         const review = {
@@ -2422,28 +2722,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "lidarr_get_root_folders": {
-        if (!clients.lidarr) throw new Error("Lidarr not configured");
-        const folders = await clients.lidarr.getRootFolders();
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify(folders, null, 2),
-          }],
-        };
-      }
-
-      case "lidarr_get_quality_profiles": {
-        if (!clients.lidarr) throw new Error("Lidarr not configured");
-        const profiles = await clients.lidarr.getQualityProfiles();
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify(profiles.map(p => ({ id: p.id, name: p.name })), null, 2),
-          }],
-        };
-      }
-
       case "lidarr_get_metadata_profiles": {
         if (!clients.lidarr) throw new Error("Lidarr not configured");
         const profiles = await clients.lidarr.getMetadataProfiles();
@@ -2727,6 +3005,248 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return jsonText({ triggered: true, commandId: result.id, itemId });
       }
 
+      // ---- Chaptarr ------------------------------------------------------
+      //
+      // Every response carries the provider id next to the local id. Chaptarr's
+      // own contract is explicit that local row ids are handles which change
+      // when metadata is repaired or merged, so a caller holding an id across
+      // turns should hold the provider id.
+      case "chaptarr_get_authors": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { limit = 25, offset = 0, search, mediaType } = args as {
+          limit?: number; offset?: number; search?: string; mediaType?: string;
+        };
+        const scope = parseChaptarrMediaType(mediaType);
+        const normalizedLimit = Math.max(1, Math.min(limit, 100));
+        const normalizedOffset = Math.max(0, offset);
+        const filter = search?.trim().toLowerCase();
+
+        const all = await clients.chaptarr.getAuthors(scope);
+        const filtered = filter
+          ? all.filter(a => a.authorName?.toLowerCase().includes(filter))
+          : all;
+        const paged = filtered.slice(normalizedOffset, normalizedOffset + normalizedLimit);
+        return jsonText({
+          mediaType: scope ?? 'all',
+          total: all.length,
+          filteredCount: filtered.length,
+          returned: paged.length,
+          offset: normalizedOffset,
+          limit: normalizedLimit,
+          hasMore: normalizedOffset + normalizedLimit < filtered.length,
+          nextOffset: normalizedOffset + normalizedLimit < filtered.length
+            ? normalizedOffset + normalizedLimit : null,
+          search: search ?? null,
+          authors: paged.map(summarizeChaptarrAuthor),
+        });
+      }
+
+      case "chaptarr_get_author": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { authorId } = args as { authorId: number };
+        const author = await clients.chaptarr.getAuthorById(authorId);
+        return jsonText(summarizeChaptarrAuthor(author));
+      }
+
+      case "chaptarr_get_books": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { authorId, limit = 25, offset = 0, search, mediaType } = args as {
+          authorId?: number; limit?: number; offset?: number; search?: string; mediaType?: string;
+        };
+        const scope = parseChaptarrMediaType(mediaType);
+        const normalizedLimit = Math.max(1, Math.min(limit, 100));
+        const normalizedOffset = Math.max(0, offset);
+        const filter = search?.trim().toLowerCase();
+
+        const all = await clients.chaptarr.getBooks(authorId, scope);
+        const filtered = filter
+          ? all.filter(b => b.title?.toLowerCase().includes(filter))
+          : all;
+        const paged = filtered.slice(normalizedOffset, normalizedOffset + normalizedLimit);
+        return jsonText({
+          mediaType: scope ?? 'all',
+          authorId: authorId ?? null,
+          total: all.length,
+          filteredCount: filtered.length,
+          returned: paged.length,
+          offset: normalizedOffset,
+          limit: normalizedLimit,
+          hasMore: normalizedOffset + normalizedLimit < filtered.length,
+          nextOffset: normalizedOffset + normalizedLimit < filtered.length
+            ? normalizedOffset + normalizedLimit : null,
+          search: search ?? null,
+          books: paged.map(summarizeChaptarrBook),
+        });
+      }
+
+      case "chaptarr_search": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { term } = args as { term: string };
+        const results = await clients.chaptarr.searchAuthors(term);
+        return jsonText({
+          term,
+          count: results.length,
+          // A non-zero id means the author is already in the library.
+          authors: results.map(a => ({
+            ...summarizeChaptarrAuthor(a),
+            inLibrary: Boolean(a.id),
+          })),
+        });
+      }
+
+      case "chaptarr_search_book": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { term } = args as { term: string };
+        const results = await clients.chaptarr.searchBooks(term);
+        return jsonText({
+          term,
+          count: results.length,
+          books: results.map(b => ({
+            ...summarizeChaptarrBook(b),
+            inLibrary: Boolean(b.id),
+          })),
+        });
+      }
+
+      case "chaptarr_get_editions": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { bookId } = args as { bookId: number };
+        const editions = await clients.chaptarr.getEditions(bookId);
+        return jsonText({
+          bookId,
+          count: editions.length,
+          editions: editions.map(e => ({
+            id: e.id,
+            title: e.title,
+            foreignEditionId: e.foreignEditionId ?? null,
+            isbn13: e.isbn13 ?? null,
+            asin: e.asin ?? null,
+            publisher: e.publisher ?? null,
+            pageCount: e.pageCount ?? null,
+            isEbook: e.isEbook ?? null,
+            monitored: e.monitored ?? null,
+          })),
+        });
+      }
+
+      case "chaptarr_get_series": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { authorId } = args as { authorId?: number };
+        const series = await clients.chaptarr.getSeries(authorId);
+        return jsonText({
+          authorId: authorId ?? null,
+          count: series.length,
+          series: series.map(x => ({
+            id: x.id,
+            // Durable identity, as everywhere else in the Chaptarr tools.
+            foreignSeriesId: x.foreignSeriesId ?? null,
+            title: x.title,
+            description: x.description || null,
+            mediaType: x.mediaType ?? null,
+            workCount: x.workCount ?? null,
+            primaryWorkCount: x.primaryWorkCount ?? null,
+            // Reading order, sorted, so a caller can answer "what's next".
+            books: (x.links ?? [])
+              .slice()
+              .sort((a, b) => (a.seriesPosition ?? 0) - (b.seriesPosition ?? 0))
+              .map(l => ({ bookId: l.bookId, position: l.position ?? null })),
+          })),
+        });
+      }
+
+      case "chaptarr_get_queue": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { page = 1, pageSize = 25 } = args as { page?: number; pageSize?: number };
+        const queue = await clients.chaptarr.getQueue(
+          Math.max(1, page), Math.max(1, Math.min(pageSize, 100)));
+        return jsonText({
+          totalRecords: queue.totalRecords,
+          returned: queue.records.length,
+          page: Math.max(1, page),
+          items: queue.records,
+        });
+      }
+
+      case "chaptarr_get_missing": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { page = 1, pageSize = 25, mediaType } = args as {
+          page?: number; pageSize?: number; mediaType?: string;
+        };
+        const scope = parseChaptarrMediaType(mediaType);
+        const missing = await clients.chaptarr.getMissing(
+          Math.max(1, page), Math.max(1, Math.min(pageSize, 100)), scope);
+        return jsonText({
+          mediaType: scope ?? 'all',
+          totalRecords: missing.totalRecords,
+          returned: missing.records?.length ?? 0,
+          page: Math.max(1, page),
+          books: (missing.records ?? []).map(summarizeChaptarrBook),
+        });
+      }
+
+      case "chaptarr_get_calendar": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { start, end } = args as { start?: string; end?: string };
+        const calendar = await clients.chaptarr.getCalendar(start, end);
+        return jsonText({ start: start ?? null, end: end ?? null, count: calendar.length, items: calendar });
+      }
+
+      case "chaptarr_get_metadata_profiles": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const profiles = await clients.chaptarr.getMetadataProfiles();
+        return jsonText({ count: profiles.length, profiles });
+      }
+
+      case "chaptarr_add_author": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const a = args as {
+          foreignAuthorId: string; rootFolderPath: string; qualityProfileId: number;
+          metadataProfileId: number; mediaType: string; monitored?: boolean;
+        };
+        // Required here, not optional: Chaptarr creates the author on one side
+        // of the library and will not infer which.
+        const side = parseChaptarrMediaType(a.mediaType, false) as 'audiobook' | 'ebook';
+        const author = await clients.chaptarr.addAuthor({
+          foreignAuthorId: a.foreignAuthorId,
+          rootFolderPath: a.rootFolderPath,
+          qualityProfileId: a.qualityProfileId,
+          metadataProfileId: a.metadataProfileId,
+          mediaType: side,
+          monitored: a.monitored,
+        });
+        return jsonText({ added: true, mediaType: side, author: summarizeChaptarrAuthor(author) });
+      }
+
+      case "chaptarr_trigger_book_search": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { bookIds } = args as { bookIds: number[] };
+        if (!Array.isArray(bookIds) || bookIds.length === 0) {
+          throw new Error("bookIds must be a non-empty array of local Chaptarr book ids");
+        }
+        const command = await clients.chaptarr.triggerBookSearch(bookIds);
+        return jsonText({ triggered: true, bookIds, commandId: command.id });
+      }
+
+      case "chaptarr_search_missing": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { authorId, mediaType } = args as { authorId?: number; mediaType?: string };
+        const scope = parseChaptarrMediaType(mediaType);
+        const command = await clients.chaptarr.searchMissing(authorId, scope);
+        return jsonText({
+          triggered: true,
+          authorId: authorId ?? null,
+          mediaType: scope ?? 'all',
+          commandId: command.id,
+        });
+      }
+
+      case "chaptarr_refresh_author": {
+        if (!clients.chaptarr) throw new Error("Chaptarr not configured");
+        const { authorId } = args as { authorId: number };
+        const command = await clients.chaptarr.refreshAuthor(authorId);
+        return jsonText({ triggered: true, authorId, commandId: command.id });
+      }
+
       case "arr_search_all": {
         const term = (args as { term: string }).term;
         const results: Record<string, unknown> = {};
@@ -2764,6 +3284,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             results.whisparr = { count: whisparrResults.length, results: whisparrResults.slice(0, 5) };
           } catch (e) {
             results.whisparr = { error: e instanceof Error ? e.message : String(e) };
+          }
+        }
+
+        if (clients.chaptarr) {
+          // Books resolve better by title than by author for a generic term,
+          // so this searches books and reports the summarized shape.
+          try {
+            const chaptarrResults = await clients.chaptarr.searchBooks(term);
+            results.chaptarr = {
+              count: chaptarrResults.length,
+              results: chaptarrResults.slice(0, 5).map(summarizeChaptarrBook),
+            };
+          } catch (e) {
+            results.chaptarr = { error: e instanceof Error ? e.message : String(e) };
           }
         }
 

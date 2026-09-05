@@ -12,11 +12,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 
-MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, Prowlarr, and Whisparr.
+MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, Prowlarr, Whisparr, and Chaptarr.
 
 Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP mode for hosted MCP clients such as ChatGPT connectors.
 
-> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr today, more to come. Fixes that aren't scope-related are still sent upstream.
+> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr and Chaptarr (books) today, more to come. Fixes that aren't scope-related are still sent upstream.
 >
 > Distributed as a **container image only**; there is no npm package for this fork.
 
@@ -39,6 +39,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
 | **Lidarr (Music)** | List artists, view albums, search musicians, trigger downloads, check queue, view calendar, review setup |
 | **Prowlarr (Indexers)** | List indexers, search across all trackers, test health, view statistics |
 | **Whisparr (Adult)** | List library, search sites/scenes, trigger downloads, check queue, view calendar, review setup - works with both V2 and V3 (Eros) |
+| **Chaptarr (Books)** | List authors/books/series/editions, search, add authors, trigger downloads, check queue and missing, review setup - audiobooks and eBooks in one instance |
 | **Cross-Service** | Status check, unified search across all configured services |
 | **Configuration** | Quality profiles, download clients, naming conventions, health checks, storage info |
 | **TRaSH Guides** | Reference quality profiles, custom formats, naming conventions, compare against recommendations |
@@ -52,6 +53,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
   - [Lidarr](https://lidarr.audio/) for music
   - [Prowlarr](https://prowlarr.com/) for indexer management
   - [Whisparr](https://whisparr.com/) for adult media (V2 or V3 "Eros")
+  - [Chaptarr](https://github.com/Chaptarr/chaptarr) for audiobooks and eBooks
 
 ## Installation
 
@@ -178,7 +180,7 @@ Add to your Claude Desktop config file:
   "mcpServers": {
     "arr": {
       "command": "docker",
-      "args": ["run", "--rm", "-i", "-e", "SONARR_URL", "-e", "SONARR_API_KEY", "-e", "RADARR_URL", "-e", "RADARR_API_KEY", "-e", "LIDARR_URL", "-e", "LIDARR_API_KEY", "-e", "PROWLARR_URL", "-e", "PROWLARR_API_KEY", "-e", "WHISPARR_URL", "-e", "WHISPARR_API_KEY", "ghcr.io/davidgibbons/mcp-arr:latest"],
+      "args": ["run", "--rm", "-i", "-e", "SONARR_URL", "-e", "SONARR_API_KEY", "-e", "RADARR_URL", "-e", "RADARR_API_KEY", "-e", "LIDARR_URL", "-e", "LIDARR_API_KEY", "-e", "PROWLARR_URL", "-e", "PROWLARR_API_KEY", "-e", "WHISPARR_URL", "-e", "WHISPARR_API_KEY", "-e", "CHAPTARR_URL", "-e", "CHAPTARR_API_KEY", "ghcr.io/davidgibbons/mcp-arr:latest"],
       "env": {
         "SONARR_URL": "http://host.docker.internal:8989",
         "SONARR_API_KEY": "your-sonarr-api-key",
@@ -189,7 +191,9 @@ Add to your Claude Desktop config file:
         "PROWLARR_URL": "http://host.docker.internal:9696",
         "PROWLARR_API_KEY": "your-prowlarr-api-key",
         "WHISPARR_URL": "http://host.docker.internal:6969",
-        "WHISPARR_API_KEY": "your-whisparr-api-key"
+        "WHISPARR_API_KEY": "your-whisparr-api-key",
+        "CHAPTARR_URL": "http://host.docker.internal:8789",
+        "CHAPTARR_API_KEY": "your-chaptarr-api-key"
       }
     }
   }
@@ -377,9 +381,39 @@ When an *arr health check reports entries removed upstream, the id the app holds
 2. `whisparr_get_library` flags rows with `holdsNoFiles: true`. Run `whisparr_check_folder` on each one's `path` - media found there is untracked, and that is the finding worth reporting.
 3. To recover: `whisparr_delete_item` the dead row (files are always kept), `whisparr_add_item` the live `key` with `path` set to the existing folder, then `whisparr_rescan_item`.
 
+### Chaptarr Tools (Books)
+
+[Chaptarr](https://github.com/Chaptarr/chaptarr) is a Readarr fork that holds **audiobooks and eBooks in one instance**, so media type is part of identity rather than a filter: the same title can exist as an audiobook row *and* an eBook row, with separate monitoring, quality profiles and root folders. Library tools therefore take a `mediaType` of `all` (default), `audiobook` or `ebook`.
+
+| Tool | Description |
+|------|-------------|
+| `chaptarr_get_authors` | List library authors with `limit`, `offset`, `search` and `mediaType` |
+| `chaptarr_get_author` | Get one author, including per-media-type monitoring, profiles and statistics |
+| `chaptarr_get_books` | List books, optionally for one author, with pagination and `mediaType` |
+| `chaptarr_search` | Search the metadata pipeline for authors (returns `foreignAuthorId`) |
+| `chaptarr_search_book` | Search the metadata pipeline for books by title or ISBN |
+| `chaptarr_get_editions` | List the editions of one book - the per-format/publisher variants |
+| `chaptarr_get_series` | List book series with reading order, optionally scoped to one author |
+| `chaptarr_get_queue` | View the current download queue |
+| `chaptarr_get_missing` | List monitored books with no file yet |
+| `chaptarr_get_calendar` | See upcoming book releases |
+| `chaptarr_get_metadata_profiles` | List metadata profiles (allowed languages and release kinds) |
+| `chaptarr_add_author` | Add an author, on a required `mediaType` side of the library |
+| `chaptarr_trigger_book_search` | Trigger a download search for specific books |
+| `chaptarr_search_missing` | Trigger a search for missing books, optionally per author and media type |
+| `chaptarr_refresh_author` | Refresh one author's metadata and rescan its files |
+
+#### Provider ids vs local ids
+
+Chaptarr's own [identity contract](https://github.com/Chaptarr/chaptarr/blob/develop/docs/API_IDENTITY_AND_LIFECYCLE.md) is explicit that **local row ids are handles, not identity** - they change when metadata is repaired, merged or reimported - while provider ids (`hc:`, `gr:`, `az:`, `ol:`, `gb:`) are durable.
+
+Every Chaptarr tool reports both: `id` alongside `foreignAuthorId` / `foreignBookId` / `foreignSeriesId`, with books also carrying their discrete `providerIds` (Hardcover, Goodreads, ASIN, Audible). Anything held across turns or cached should key on the provider id, not `id`.
+
+> **Chaptarr is beta** (0.9.x) and its published contract doc runs ahead of the shipped build - the doc describes `providerId`/`providerIdsAll` fields on books that 0.9.958 does not emit. These tools follow what the build actually returns.
+
 ### Configuration Review Tools
 
-These tools are available for Sonarr, Radarr, Lidarr, and Whisparr. Replace `{service}` with the service name (e.g., `sonarr_get_quality_profiles`).
+These tools are available for Sonarr, Radarr, Lidarr, Whisparr, and Chaptarr. Replace `{service}` with the service name (e.g., `sonarr_get_quality_profiles`).
 
 | Tool | Description |
 |------|-------------|
