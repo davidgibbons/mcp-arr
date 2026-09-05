@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Node 18 was advertised as supported but does not work.** The HTTP transport regression test fails on
+  Node 18 with `400 !== 200` — the very "Mcp-Session-Id header is required" bug it was written to catch.
+  CI built and type-checked but never ran `node --test`, so this went unnoticed; it reproduces under
+  `node:18-alpine` on the pre-existing lockfile, so it is not dependency drift. Node 18 has been EOL since
+  2025-04-30 and the published image has always been `node:20-alpine`, so nothing shipped was affected.
+  The CI matrix drops 18 and adds 24 (20, 22 and 24 all pass) and `engines` now says `>=20.0.0`.
+  This affects upstream identically.
+- **Two high-severity advisories cleared.** `ip-address` (leading-zero octet parsing, CIDR-suffix and
+  IPv4-mapped misclassification — all SSRF / trust-boundary bypasses) and moderate ones in `qs`. Both are
+  transitive under `@modelcontextprotocol/sdk`, so this is a lockfile-only change with no direct dependency
+  moved; `npm audit` now reports zero vulnerabilities. The security job had been reporting these behind
+  `continue-on-error`. Also covers what upstream's four open dependabot PRs carried.
+
 ### Changed
+
+- **CI now runs the test suite.** The build job built and type-checked but never ran `node --test`, so the
+  tests gated nothing. Also adds a manual `workflow_dispatch` trigger and moves `actions/checkout` and
+  `actions/setup-node` off v4, which targets the deprecated Node 20 runtime.
 
 - **This repository is now a primary fork**, not a staging area for upstream PRs. Upstream
   ([aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr)) is deliberately
