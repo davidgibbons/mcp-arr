@@ -1234,6 +1234,29 @@ async function runUnifiedSearch(query: string): Promise<SearchEntry[]> {
     );
   }
 
+  // Whisparr is opt-in: it only appears here when the operator has set
+  // WHISPARR_URL, so adult results never surface in an unconfigured server.
+  if (clients.whisparr) {
+    const variant = await clients.whisparr.getVariant();
+    const type = variant === "v2" ? "site" : "scene";
+    const items = await clients.whisparr.searchLibrary(trimmedQuery);
+    results.push(
+      ...items
+        .map((item) => ({ item, foreignId: item.tvdbId ?? item.tmdbId }))
+        // Without a foreign id there is nothing stable for fetch to resolve.
+        .filter((entry): entry is { item: typeof entry.item; foreignId: number } => entry.foreignId !== undefined)
+        .slice(0, 5)
+        .map(({ item, foreignId }) => ({
+          id: `arr:whisparr:${type}:${foreignId}`,
+          title: `${item.title}${item.year ? ` (${item.year})` : ""}`,
+          url: buildResourceUrl(`arr/whisparr/${type}/${foreignId}`),
+          type,
+          service: "whisparr",
+          summary: item.overview?.slice(0, 220),
+        }))
+    );
+  }
+
   return results;
 }
 
@@ -1305,6 +1328,21 @@ async function fetchSearchEntry(id: string): Promise<unknown> {
       id,
       title: matches[0]?.artistName || matches[0]?.title || rawId,
       url: buildResourceUrl(`arr/lidarr/artist/${rawId}`),
+      service,
+      type: subtype,
+      data: matches.slice(0, 10),
+    };
+  }
+
+  if (service === "whisparr" && (subtype === "site" || subtype === "scene") && clients.whisparr) {
+    const foreignId = Number(rawId);
+    const matches = (await clients.whisparr.searchLibrary(rawId)).filter(
+      (item) => (item.tvdbId ?? item.tmdbId) === foreignId
+    );
+    return {
+      id,
+      title: matches[0]?.title || rawId,
+      url: buildResourceUrl(`arr/whisparr/${subtype}/${rawId}`),
       service,
       type: subtype,
       data: matches.slice(0, 10),
@@ -2503,6 +2541,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             results.lidarr = { count: lidarrResults.length, results: lidarrResults.slice(0, 5) };
           } catch (e) {
             results.lidarr = { error: e instanceof Error ? e.message : String(e) };
+          }
+        }
+
+        if (clients.whisparr) {
+          try {
+            const whisparrResults = await clients.whisparr.searchLibrary(term);
+            results.whisparr = { count: whisparrResults.length, results: whisparrResults.slice(0, 5) };
+          } catch (e) {
+            results.whisparr = { error: e instanceof Error ? e.message : String(e) };
           }
         }
 
