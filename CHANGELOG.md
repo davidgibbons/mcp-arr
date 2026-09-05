@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Bazarr support** (subtitles). Bazarr manages subtitles for an existing Sonarr/Radarr library rather
+  than managing media itself, so it has no quality profiles or root folders and is excluded from the
+  shared configuration tools the same way Prowlarr is. 13 tools behind `BAZARR_URL` / `BAZARR_API_KEY`.
+  - Rows carry `sonarrSeriesId` / `sonarrEpisodeId` or `radarrId` — the same ids the Sonarr and Radarr
+    tools already take — so a subtitle gap traces back to the episode that owns it without a second lookup.
+  - **Pagination is mandatory, not optional.** Bazarr's listing endpoints have no server-side default page
+    size: measured against a real library, `/series` took 72s for 1.1MB and `/episodes/wanted` 76s for
+    2.1MB, while `/movies` did not finish within 90s. The same calls with `start`/`length` answer in under
+    a second. Every listing tool always sends both and reports `total` / `hasMore` / `nextStart`.
+  - An empty manual subtitle search usually means a **broken provider**, not an unavailable subtitle — a
+    provider in an error state returns an empty result rather than an error. The tools say so on empty
+    results, and `bazarr_get_providers` separates unhealthy providers out.
+  - `ArrClient` now supports an unversioned API path. Bazarr's API is `/api/system/status` with no version
+    segment; `/api/v1/...` returns the web UI's HTML with a 200, so a wrong path fails as a JSON parse
+    error rather than a 404. Versioned services are unchanged, which a test pins.
 - **Jellyseerr support** (media requests). Jellyseerr takes requests from users and hands approved ones to
   Sonarr and Radarr, so like Prowlarr it has no quality profiles or root folders and is excluded from the
   shared configuration tools. 9 tools behind `JELLYSEERR_URL` / `JELLYSEERR_API_KEY`.

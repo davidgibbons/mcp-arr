@@ -5,7 +5,7 @@
  * the same REST API pattern with X-Api-Key header authentication.
  */
 
-export type ArrService = 'sonarr' | 'radarr' | 'lidarr' | 'prowlarr' | 'whisparr' | 'chaptarr' | 'jellyseerr';
+export type ArrService = 'sonarr' | 'radarr' | 'lidarr' | 'prowlarr' | 'whisparr' | 'chaptarr' | 'jellyseerr' | 'bazarr';
 
 export interface ArrConfig {
   url: string;
@@ -420,7 +420,12 @@ export class ArrClient {
    * Make an API request
    */
   protected async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${this.config.url}/api/${this.apiVersion}${endpoint}`;
+    // Most *arr apps namespace by version (/api/v3/...). Bazarr does not
+    // version its API at all - /api/system/status is the real endpoint and
+    // /api/v1/... quietly serves the web UI's index.html instead - so an
+    // empty apiVersion has to produce /api/... rather than /api//... .
+    const base = this.apiVersion ? `/api/${this.apiVersion}` : '/api';
+    const url = `${this.config.url}${base}${endpoint}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Api-Key': this.config.apiKey,
@@ -1644,5 +1649,202 @@ export class JellyseerrClient extends ArrClient {
 
   async getAbout(): Promise<Record<string, unknown>> {
     return this['request']<Record<string, unknown>>('/settings/about');
+  }
+}
+
+/**
+ * Bazarr - subtitle management for an existing Sonarr/Radarr library.
+ *
+ * It is not a Servarr application and does not behave like one:
+ *
+ * 1. The API is unversioned. `/api/system/status` is real; `/api/v1/...`
+ *    returns the web UI's HTML with a 200, so a wrong path fails as a JSON
+ *    parse error rather than a 404.
+ * 2. Responses are inconsistently enveloped. Most return `{ data: ... }`,
+ *    paged ones add `{ data, total }`, and a few (`/badges`,
+ *    `/system/languages/profiles`) return the bare value. `unwrap()` handles
+ *    all three rather than each caller guessing.
+ * 3. Listing endpoints have no default page size, and returning everything is
+ *    not viable: measured against a real library, `/series` took 72s for 1.1MB
+ *    and `/episodes/wanted` 76s for 2.1MB, while `/movies` did not finish
+ *    inside 90s. The same calls with `start`/`length` answer in under a second.
+ *    Pagination is therefore mandatory here, not a convenience.
+ *
+ * Rows carry `sonarrSeriesId`/`sonarrEpisodeId` or `radarrId`, which are the
+ * ids the Sonarr and Radarr tools in this server already use - so a subtitle
+ * gap can be traced straight back to the episode that owns it.
+ */
+export interface BazarrWantedEpisode {
+  seriesTitle: string;
+  episode_number: string;
+  episodeTitle: string;
+  missing_subtitles: Array<{ name: string; code2: string; code3: string; forced: boolean; hi: boolean }>;
+  sonarrSeriesId: number;
+  sonarrEpisodeId: number;
+  sceneName?: string;
+  tags?: string[];
+  seriesType?: string;
+}
+
+export interface BazarrWantedMovie {
+  title: string;
+  missing_subtitles: Array<{ name: string; code2: string; code3: string; forced: boolean; hi: boolean }>;
+  radarrId: number;
+  sceneName?: string;
+  tags?: string[];
+  monitored?: boolean;
+}
+
+export interface BazarrProvider {
+  name: string;
+  status: string;
+  retry: string;
+}
+
+export interface BazarrBadges {
+  episodes: number;
+  movies: number;
+  providers: number;
+  status: number;
+  sonarr_signalr?: string;
+  radarr_signalr?: string;
+  announcements?: number;
+}
+
+export interface BazarrHistoryRow {
+  seriesTitle?: string;
+  episodeTitle?: string;
+  episode_number?: string;
+  title?: string;
+  action: number | string;
+  language?: { name: string; code2: string } | null;
+  provider?: string | null;
+  score?: number | string | null;
+  timestamp?: string;
+  description?: string;
+  upgradable?: boolean;
+  blacklisted?: boolean;
+  sonarrSeriesId?: number;
+  sonarrEpisodeId?: number;
+  radarrId?: number;
+}
+
+export interface BazarrPage<T> {
+  data: T[];
+  total: number;
+}
+
+export class BazarrClient extends ArrClient {
+  constructor(config: ArrConfig) {
+    super('bazarr', config);
+    // Unversioned: the base class turns an empty version into /api/... .
+    this.apiVersion = '';
+  }
+
+  /** Bazarr wraps most payloads in `data`, but not all of them. */
+  private static unwrap<T>(body: unknown): T {
+    if (body && typeof body === 'object' && 'data' in (body as Record<string, unknown>)) {
+      return (body as { data: T }).data;
+    }
+    return body as T;
+  }
+
+  private static page<T>(body: unknown): BazarrPage<T> {
+    const b = (body ?? {}) as { data?: T[]; total?: number };
+    const data = Array.isArray(b.data) ? b.data : [];
+    return { data, total: typeof b.total === 'number' ? b.total : data.length };
+  }
+
+  /**
+   * Pagination is required, not optional: without it these endpoints take
+   * 60-90s and return megabytes, which no MCP client should be handed.
+   * Capped at 100 rows for the same reason.
+   */
+  private static range(start: number, length: number): string {
+    return `start=${Math.max(0, start)}&length=${Math.max(1, Math.min(length, 100))}`;
+  }
+
+  /** Bazarr's status shape is its own, not the Servarr SystemStatus. */
+  async getBazarrStatus(): Promise<Record<string, unknown>> {
+    return BazarrClient.unwrap<Record<string, unknown>>(
+      await this['request']<unknown>('/system/status'));
+  }
+
+  /**
+   * The counts the Bazarr UI shows in its nav badges: how many episodes and
+   * movies are missing subtitles, how many providers are unhealthy, and
+   * whether the Sonarr/Radarr SignalR feeds are live.
+   */
+  async getBadges(): Promise<BazarrBadges> {
+    return BazarrClient.unwrap<BazarrBadges>(await this['request']<unknown>('/badges'));
+  }
+
+  async getBazarrHealth(): Promise<unknown[]> {
+    return BazarrClient.unwrap<unknown[]>(await this['request']<unknown>('/system/health')) ?? [];
+  }
+
+  /** Provider health. A provider in an error state stops subtitles arriving. */
+  async getProviders(): Promise<BazarrProvider[]> {
+    return BazarrClient.unwrap<BazarrProvider[]>(await this['request']<unknown>('/providers')) ?? [];
+  }
+
+  async getLanguageProfiles(): Promise<unknown[]> {
+    return BazarrClient.unwrap<unknown[]>(
+      await this['request']<unknown>('/system/languages/profiles')) ?? [];
+  }
+
+  async getLanguages(): Promise<unknown[]> {
+    return BazarrClient.unwrap<unknown[]>(await this['request']<unknown>('/system/languages')) ?? [];
+  }
+
+  async getWantedEpisodes(start = 0, length = 25): Promise<BazarrPage<BazarrWantedEpisode>> {
+    return BazarrClient.page<BazarrWantedEpisode>(
+      await this['request']<unknown>(`/episodes/wanted?${BazarrClient.range(start, length)}`));
+  }
+
+  async getWantedMovies(start = 0, length = 25): Promise<BazarrPage<BazarrWantedMovie>> {
+    return BazarrClient.page<BazarrWantedMovie>(
+      await this['request']<unknown>(`/movies/wanted?${BazarrClient.range(start, length)}`));
+  }
+
+  async getSeries(start = 0, length = 25): Promise<BazarrPage<Record<string, unknown>>> {
+    return BazarrClient.page<Record<string, unknown>>(
+      await this['request']<unknown>(`/series?${BazarrClient.range(start, length)}`));
+  }
+
+  async getMovies(start = 0, length = 25): Promise<BazarrPage<Record<string, unknown>>> {
+    return BazarrClient.page<Record<string, unknown>>(
+      await this['request']<unknown>(`/movies?${BazarrClient.range(start, length)}`));
+  }
+
+  /** Episodes of one series, with their present and missing subtitles. */
+  async getEpisodes(seriesId: number): Promise<Record<string, unknown>[]> {
+    return BazarrClient.unwrap<Record<string, unknown>[]>(
+      await this['request']<unknown>(`/episodes?seriesid[]=${seriesId}`)) ?? [];
+  }
+
+  async getEpisodeHistory(start = 0, length = 25): Promise<BazarrPage<BazarrHistoryRow>> {
+    return BazarrClient.page<BazarrHistoryRow>(
+      await this['request']<unknown>(`/episodes/history?${BazarrClient.range(start, length)}`));
+  }
+
+  async getMovieHistory(start = 0, length = 25): Promise<BazarrPage<BazarrHistoryRow>> {
+    return BazarrClient.page<BazarrHistoryRow>(
+      await this['request']<unknown>(`/movies/history?${BazarrClient.range(start, length)}`));
+  }
+
+  /**
+   * Ask the providers what subtitles exist for one episode, without
+   * downloading. This is the manual-search view: it reaches out to every
+   * enabled provider, so it is slow and reflects provider health.
+   */
+  async searchEpisodeSubtitles(episodeId: number): Promise<unknown[]> {
+    return BazarrClient.unwrap<unknown[]>(
+      await this['request']<unknown>(`/providers/episodes?episodeid=${episodeId}`)) ?? [];
+  }
+
+  async searchMovieSubtitles(radarrId: number): Promise<unknown[]> {
+    return BazarrClient.unwrap<unknown[]>(
+      await this['request']<unknown>(`/providers/movies?radarrid=${radarrId}`)) ?? [];
   }
 }

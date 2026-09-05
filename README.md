@@ -12,11 +12,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 
-MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, Prowlarr, Whisparr, Chaptarr, and Jellyseerr.
+MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, Prowlarr, Whisparr, Chaptarr, Jellyseerr, and Bazarr.
 
 Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP mode for hosted MCP clients such as ChatGPT connectors.
 
-> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr, Chaptarr (books) and Jellyseerr (requests) today, more to come. Fixes that aren't scope-related are still sent upstream.
+> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr, Chaptarr (books), Jellyseerr (requests) and Bazarr (subtitles) today, more to come. Fixes that aren't scope-related are still sent upstream.
 >
 > Distributed as a **container image only**; there is no npm package for this fork.
 
@@ -41,6 +41,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
 | **Whisparr (Adult)** | List library, search sites/scenes, trigger downloads, check queue, view calendar, review setup - works with both V2 and V3 (Eros) |
 | **Chaptarr (Books)** | List authors/books/series/editions, search, add authors, trigger downloads, check queue and missing, review setup - audiobooks and eBooks in one instance |
 | **Jellyseerr (Requests)** | Triage media requests: list by state, approve or decline, review issues, see who is asking for what |
+| **Bazarr (Subtitles)** | Find episodes/movies missing subtitles, check provider health, manual subtitle search, review history and language profiles |
 | **Cross-Service** | Status check, unified search across all configured services |
 | **Configuration** | Quality profiles, download clients, naming conventions, health checks, storage info |
 | **TRaSH Guides** | Reference quality profiles, custom formats, naming conventions, compare against recommendations |
@@ -56,6 +57,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
   - [Whisparr](https://whisparr.com/) for adult media (V2 or V3 "Eros")
   - [Chaptarr](https://github.com/Chaptarr/chaptarr) for audiobooks and eBooks
   - [Jellyseerr](https://github.com/fallenbagel/jellyseerr) for media requests
+  - [Bazarr](https://www.bazarr.media/) for subtitles (works alongside Sonarr and Radarr)
 
 ## Installation
 
@@ -182,7 +184,7 @@ Add to your Claude Desktop config file:
   "mcpServers": {
     "arr": {
       "command": "docker",
-      "args": ["run", "--rm", "-i", "-e", "SONARR_URL", "-e", "SONARR_API_KEY", "-e", "RADARR_URL", "-e", "RADARR_API_KEY", "-e", "LIDARR_URL", "-e", "LIDARR_API_KEY", "-e", "PROWLARR_URL", "-e", "PROWLARR_API_KEY", "-e", "WHISPARR_URL", "-e", "WHISPARR_API_KEY", "-e", "CHAPTARR_URL", "-e", "CHAPTARR_API_KEY", "-e", "JELLYSEERR_URL", "-e", "JELLYSEERR_API_KEY", "ghcr.io/davidgibbons/mcp-arr:latest"],
+      "args": ["run", "--rm", "-i", "-e", "SONARR_URL", "-e", "SONARR_API_KEY", "-e", "RADARR_URL", "-e", "RADARR_API_KEY", "-e", "LIDARR_URL", "-e", "LIDARR_API_KEY", "-e", "PROWLARR_URL", "-e", "PROWLARR_API_KEY", "-e", "WHISPARR_URL", "-e", "WHISPARR_API_KEY", "-e", "CHAPTARR_URL", "-e", "CHAPTARR_API_KEY", "-e", "JELLYSEERR_URL", "-e", "JELLYSEERR_API_KEY", "-e", "BAZARR_URL", "-e", "BAZARR_API_KEY", "ghcr.io/davidgibbons/mcp-arr:latest"],
       "env": {
         "SONARR_URL": "http://host.docker.internal:8989",
         "SONARR_API_KEY": "your-sonarr-api-key",
@@ -197,7 +199,9 @@ Add to your Claude Desktop config file:
         "CHAPTARR_URL": "http://host.docker.internal:8789",
         "CHAPTARR_API_KEY": "your-chaptarr-api-key",
         "JELLYSEERR_URL": "http://host.docker.internal:5055",
-        "JELLYSEERR_API_KEY": "your-jellyseerr-api-key"
+        "JELLYSEERR_API_KEY": "your-jellyseerr-api-key",
+        "BAZARR_URL": "http://host.docker.internal:6767",
+        "BAZARR_API_KEY": "your-bazarr-api-key"
       }
     }
   }
@@ -444,6 +448,38 @@ A request row holds only a `tmdbId` — there is no title anywhere in the payloa
 #### Approving starts a download
 
 `jellyseerr_approve_request` is not a dry run: it hands the request to Sonarr or Radarr, which begins fetching. Declining only closes the request and removes nothing.
+
+### Bazarr Tools (Subtitles)
+
+[Bazarr](https://www.bazarr.media/) manages subtitles for an existing Sonarr/Radarr library rather than managing media itself, so it has no quality profiles or root folders and is excluded from the shared configuration tools, the same way Prowlarr is.
+
+Rows carry `sonarrSeriesId` / `sonarrEpisodeId` or `radarrId` — the same ids the Sonarr and Radarr tools here take — so a missing subtitle traces straight back to the episode that owns it.
+
+| Tool | Description |
+|------|-------------|
+| `bazarr_get_summary` | Headline counts: episodes/movies missing subtitles, unhealthy providers, Sonarr/Radarr connection state. **Start here.** |
+| `bazarr_get_wanted_episodes` | Episodes missing wanted subtitles, with the languages still missing |
+| `bazarr_get_wanted_movies` | Movies missing wanted subtitles |
+| `bazarr_get_providers` | Provider health, with unhealthy providers called out separately |
+| `bazarr_get_episode_history` | Recent episode subtitle activity - provider, language, match score |
+| `bazarr_get_movie_history` | Recent movie subtitle activity |
+| `bazarr_get_series` | Series Bazarr tracks, with language profile and missing counts |
+| `bazarr_get_movies` | Movies Bazarr tracks |
+| `bazarr_get_episodes` | Every episode of one series, with subtitles present and missing |
+| `bazarr_search_episode_subtitles` | Ask every provider what exists for one episode (no download) |
+| `bazarr_search_movie_subtitles` | Same for a movie |
+| `bazarr_get_language_profiles` | Which languages are wanted, and whether forced/HI count |
+| `bazarr_review_setup` | Full configuration review in one call |
+
+#### Pagination is mandatory, not optional
+
+Bazarr's listing endpoints have no server-side default page size, and asking for everything is not viable. Measured against a real library: `/series` took **72s for 1.1MB**, `/episodes/wanted` **76s for 2.1MB**, and `/movies` did not finish within 90s. The same calls with `start`/`length` answer in **under a second**.
+
+Every listing tool therefore always sends `start` and `length` (default 25, capped at 100) and reports `total`, `hasMore` and `nextStart` so you can page deliberately.
+
+#### An empty subtitle search is ambiguous
+
+`bazarr_search_episode_subtitles` returning nothing usually means a **provider is broken**, not that no subtitle exists — a provider in an error state produces an empty result rather than an error. The tools say so in a `note` on empty results, and `bazarr_get_providers` separates unhealthy providers from healthy ones for exactly this reason.
 
 ### Configuration Review Tools
 

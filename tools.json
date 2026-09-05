@@ -1,7 +1,7 @@
 [
   {
     "name": "arr_status",
-    "description": "Get status of all configured *arr services. Currently configured: Sonarr (TV), Radarr (Movies), Lidarr (Music), Prowlarr (Indexers), Whisparr (Adult), Chaptarr (Books), Jellyseerr (Requests)",
+    "description": "Get status of all configured *arr services. Currently configured: Sonarr (TV), Radarr (Movies), Lidarr (Music), Prowlarr (Indexers), Whisparr (Adult), Chaptarr (Books), Jellyseerr (Requests), Bazarr (Subtitles)",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -1710,6 +1710,198 @@
   {
     "name": "jellyseerr_review_setup",
     "description": "Get a Jellyseerr configuration review: version, request counts by state, open issues, and user count. Use this to analyse the setup and spot a backlog.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_summary",
+    "description": "Get Bazarr's headline counts: how many episodes and movies are missing wanted subtitles, how many providers are unhealthy, and whether the Sonarr/Radarr SignalR feeds are connected. Start here - it says whether there is a problem before you page through thousands of rows.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_wanted_episodes",
+    "description": "Get episodes missing wanted subtitles, with the languages still missing and the sonarrSeriesId/sonarrEpisodeId that identify them in Sonarr. Paginated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "description": "Row offset to start from (default: 0)"
+        },
+        "length": {
+          "type": "number",
+          "description": "Rows to return (default: 25, max: 100). Bazarr has no server-side default and will not answer without one."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_wanted_movies",
+    "description": "Get movies missing wanted subtitles, with the languages still missing and the radarrId that identifies them in Radarr. Paginated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "description": "Row offset to start from (default: 0)"
+        },
+        "length": {
+          "type": "number",
+          "description": "Rows to return (default: 25, max: 100). Bazarr has no server-side default and will not answer without one."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_providers",
+    "description": "Get subtitle provider health. A provider in an error state (bad credentials, rate limited, banned) silently stops subtitles arriving while the rest of Bazarr looks fine, so check this before investigating individual episodes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_episode_history",
+    "description": "Get recent subtitle activity for episodes - what was downloaded or upgraded, from which provider, with what match score. Paginated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "description": "Row offset to start from (default: 0)"
+        },
+        "length": {
+          "type": "number",
+          "description": "Rows to return (default: 25, max: 100). Bazarr has no server-side default and will not answer without one."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_movie_history",
+    "description": "Get recent subtitle activity for movies. Paginated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "description": "Row offset to start from (default: 0)"
+        },
+        "length": {
+          "type": "number",
+          "description": "Rows to return (default: 25, max: 100). Bazarr has no server-side default and will not answer without one."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_series",
+    "description": "Get the series Bazarr tracks, with their subtitle language profile and how many episodes are still missing subtitles. Paginated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "description": "Row offset to start from (default: 0)"
+        },
+        "length": {
+          "type": "number",
+          "description": "Rows to return (default: 25, max: 100). Bazarr has no server-side default and will not answer without one."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_movies",
+    "description": "Get the movies Bazarr tracks, with their subtitle language profile. Paginated.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "description": "Row offset to start from (default: 0)"
+        },
+        "length": {
+          "type": "number",
+          "description": "Rows to return (default: 25, max: 100). Bazarr has no server-side default and will not answer without one."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_get_episodes",
+    "description": "Get every episode of one series with the subtitles it already has and the ones still missing. Takes the Sonarr series id, which is what bazarr_get_series and the Sonarr tools both report.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "seriesId": {
+          "type": "number",
+          "description": "Sonarr series id (sonarrSeriesId)"
+        }
+      },
+      "required": [
+        "seriesId"
+      ]
+    }
+  },
+  {
+    "name": "bazarr_search_episode_subtitles",
+    "description": "Ask every enabled provider what subtitles exist for one episode, without downloading anything. This is Bazarr's manual search: it is slow, and an empty result usually means provider trouble rather than a genuinely unavailable subtitle - check bazarr_get_providers.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "episodeId": {
+          "type": "number",
+          "description": "Sonarr episode id (sonarrEpisodeId), as reported by bazarr_get_wanted_episodes"
+        }
+      },
+      "required": [
+        "episodeId"
+      ]
+    }
+  },
+  {
+    "name": "bazarr_search_movie_subtitles",
+    "description": "Ask every enabled provider what subtitles exist for one movie, without downloading. Slow, for the same reason as the episode version.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "radarrId": {
+          "type": "number",
+          "description": "Radarr movie id (radarrId), as reported by bazarr_get_wanted_movies"
+        }
+      },
+      "required": [
+        "radarrId"
+      ]
+    }
+  },
+  {
+    "name": "bazarr_get_language_profiles",
+    "description": "Get the subtitle language profiles - which languages are wanted, and whether forced or hearing-impaired variants count. A profile that wants a language no provider serves is a common cause of a permanently non-empty wanted list.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "bazarr_review_setup",
+    "description": "Get a comprehensive Bazarr configuration review in one call: version and connected Sonarr/Radarr versions, health warnings, provider health, language profiles, and the wanted counts. Use this to analyse the setup and suggest improvements.",
     "inputSchema": {
       "type": "object",
       "properties": {},
