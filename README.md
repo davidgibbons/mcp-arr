@@ -45,7 +45,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 20+ (only needed to run from source; the container image bundles its own)
 - At least one *arr application running with API access:
   - [Sonarr](https://sonarr.tv/) for TV series
   - [Radarr](https://radarr.video/) for movies
