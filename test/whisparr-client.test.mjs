@@ -164,3 +164,68 @@ test("an empty response body does not fail the request", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+// Step 4 of the RemovedSeriesCheck runbook: delete the dead row without its
+// files, re-add the live id pointed at the existing folder, rescan. The
+// parameter names differ between variants and getting them wrong here either
+// deletes media or silently no-ops, so pin the exact wire calls.
+
+test("V2 remediation keeps files and never excludes", async () => {
+  const fetchStub = stubFetch("2.0.0.548");
+  try {
+    const client = new WhisparrClient(config);
+    await client.deleteItem(42);
+    await client.addItem({ key: "4123", qualityProfileId: 1, title: "A Site", path: "/media/adult/A Site" });
+    await client.rescanItem(43);
+
+    const del = fetchStub.calls.find((c) => c.method === "DELETE");
+    assert.equal(del.url, "http://whisparr.test:6969/api/v3/series/42?deleteFiles=false&addImportListExclusion=false");
+
+    const add = fetchStub.calls.find((c) => c.url.endsWith("/api/v3/series") && c.method === "POST");
+    assert.equal(add.body.tvdbId, 4123);
+    assert.equal(add.body.path, "/media/adult/A Site");
+    // Re-attaching existing files must not kick off downloads.
+    assert.equal(add.body.addOptions.searchForMissingEpisodes, false);
+
+    const rescan = fetchStub.calls.find((c) => c.url.endsWith("/command"));
+    assert.deepEqual(rescan.body, { name: "RescanSeries", seriesId: 43 });
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+test("V3 remediation uses Eros parameter names", async () => {
+  const fetchStub = stubFetch("3.0.0.1034");
+  try {
+    const client = new WhisparrClient(config);
+    await client.deleteItem(42);
+    await client.addItem({ key: "stash-abc", qualityProfileId: 1, path: "/media/adult/A Scene" });
+    await client.rescanItem(43);
+
+    const del = fetchStub.calls.find((c) => c.method === "DELETE");
+    assert.equal(del.url, "http://whisparr.test:6969/api/v3/movie/42?deleteFiles=false&addImportExclusion=false");
+
+    const add = fetchStub.calls.find((c) => c.url.endsWith("/api/v3/movie") && c.method === "POST");
+    // Eros keys on the string foreignId; sending tvdbId would add nothing.
+    assert.equal(add.body.foreignId, "stash-abc");
+    assert.equal(add.body.tvdbId, undefined);
+    assert.equal(add.body.addOptions.searchForMovie, false);
+
+    const rescan = fetchStub.calls.find((c) => c.url.endsWith("/command"));
+    // RescanMovie takes a singular movieId, unlike MoviesSearch's movieIds.
+    assert.deepEqual(rescan.body, { name: "RescanMovie", movieId: 43 });
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+test("folder inspection asks Whisparr what is actually on disk", async () => {
+  const fetchStub = stubFetch("3.0.0.1034");
+  try {
+    await new WhisparrClient(config).getFolderMediaFiles("/media/adult/A Scene");
+    const call = fetchStub.calls.find((c) => c.url.includes("/filesystem/mediafiles"));
+    assert.equal(call.url, "http://whisparr.test:6969/api/v3/filesystem/mediafiles?path=%2Fmedia%2Fadult%2FA%20Scene");
+  } finally {
+    fetchStub.restore();
+  }
+});

@@ -1088,6 +1088,105 @@ export class WhisparrClient extends ArrClient {
   }
 
   /**
+   * Delete a library row, always keeping its files and never adding an
+   * import-list exclusion.
+   *
+   * Both are deliberate, not defaults waiting to be made configurable. When
+   * an upstream id dies the media on disk is fine and only the metadata
+   * pointer broke, so deleting files is never the right remediation here. And
+   * the exclusion would be keyed on the dead id, so it protects nothing while
+   * blocking the replacement if the two ever reconcile upstream.
+   */
+  async deleteItem(itemId: number): Promise<void> {
+    const v2 = (await this.getVariant()) === 'v2';
+    // V2 kept Sonarr's parameter name, Eros uses Radarr's.
+    const exclusionParam = v2 ? 'addImportListExclusion' : 'addImportExclusion';
+    await this['request']<void>(
+      `/${v2 ? 'series' : 'movie'}/${itemId}?deleteFiles=false&${exclusionParam}=false`,
+      { method: 'DELETE' }
+    );
+  }
+
+  /**
+   * Add a site/scene by its provider id.
+   *
+   * `path` points the new row at a folder that already holds media, which is
+   * how a re-keyed entry is recovered: the files never moved, only the id
+   * they were filed under died. `search` therefore defaults to false - the
+   * point is to re-detect what is already on disk, not to start downloading.
+   */
+  async addItem(item: {
+    key: string;
+    qualityProfileId: number;
+    title?: string;
+    path?: string;
+    rootFolderPath?: string;
+    monitored?: boolean;
+    search?: boolean;
+  }): Promise<WhisparrItem> {
+    const v2 = (await this.getVariant()) === 'v2';
+    const body = {
+      ...(v2 ? { tvdbId: Number(item.key), seasonFolder: true } : { foreignId: item.key }),
+      ...(item.title ? { title: item.title } : {}),
+      ...(item.path ? { path: item.path } : {}),
+      ...(item.rootFolderPath ? { rootFolderPath: item.rootFolderPath } : {}),
+      qualityProfileId: item.qualityProfileId,
+      monitored: item.monitored ?? true,
+      addOptions: v2
+        ? { searchForMissingEpisodes: item.search ?? false }
+        : { searchForMovie: item.search ?? false },
+    };
+    return this['request']<WhisparrItem>(`/${v2 ? 'series' : 'movie'}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Rescan a library item's folder so files already on disk are re-detected.
+   *
+   * A metadata refresh does not do this - refreshItem re-reads the provider,
+   * a rescan re-reads the disk. Recovering a re-keyed entry needs the rescan.
+   */
+  async rescanItem(itemId: number): Promise<{ id: number }> {
+    const body = (await this.getVariant()) === 'v2'
+      ? { name: 'RescanSeries', seriesId: itemId }
+      : { name: 'RescanMovie', movieId: itemId };
+    return this['request']<{ id: number }>('/command', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * The video files Whisparr can see in a folder.
+   *
+   * Whisparr answers with an empty list for a folder that is empty and for
+   * one that does not exist, so an empty result means "no media here",
+   * not "the folder is gone".
+   */
+  async getFolderMediaFiles(path: string): Promise<Array<{ path: string; relativePath: string; name: string }>> {
+    return this['request']<Array<{ path: string; relativePath: string; name: string }>>(
+      `/filesystem/mediafiles?path=${encodeURIComponent(path)}`
+    );
+  }
+
+  /**
+   * Everything in a folder, media or not
+   */
+  async getFolderContents(path: string): Promise<{
+    parent?: string;
+    directories: Array<{ name: string; path: string }>;
+    files: Array<{ name: string; path: string }>;
+  }> {
+    return this['request']<{
+      parent?: string;
+      directories: Array<{ name: string; path: string }>;
+      files: Array<{ name: string; path: string }>;
+    }>(`/filesystem?path=${encodeURIComponent(path)}&includeFiles=true`);
+  }
+
+  /**
    * Trigger a metadata refresh for a library item
    */
   async refreshItem(itemId: number): Promise<{ id: number }> {

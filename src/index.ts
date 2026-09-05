@@ -942,6 +942,86 @@ if (clients.whisparr) {
       },
     },
     {
+      name: "whisparr_check_folder",
+      description: "List the media files Whisparr can see in a folder on disk. Use it on a library row reporting zero files: files present there are media the app has stopped tracking (not renamed, not upgraded, not counted, not searched). An empty result means no media was found - the folder may be empty or may not exist.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          path: {
+            type: "string",
+            description: "Absolute folder path, e.g. the path reported by whisparr_get_library",
+          },
+        },
+        required: ["path"],
+      },
+    },
+    {
+      name: "whisparr_delete_item",
+      description: "Delete a library row. Files on disk are always kept and no import-list exclusion is added, so this is safe to use on a dead row whose media you intend to re-attach under a live id. It cannot be made to delete files.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          itemId: {
+            type: "number",
+            description: "Library id of the item, from whisparr_get_library",
+          },
+        },
+        required: ["itemId"],
+      },
+    },
+    {
+      name: "whisparr_add_item",
+      description: "Add a site (V2) or scene (V3) by its provider id, from the key field of whisparr_search. Pass path to point the new row at a folder that already holds media - that is how a re-keyed entry is recovered - then call whisparr_rescan_item so the files are re-detected. Does not start a download search unless search is set.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          key: {
+            type: "string",
+            description: "Provider id from whisparr_search (tvdbId on V2, foreignId on V3)",
+          },
+          qualityProfileId: {
+            type: "number",
+            description: "Quality profile id, from whisparr_get_quality_profiles",
+          },
+          title: {
+            type: "string",
+            description: "Title from the lookup result",
+          },
+          path: {
+            type: "string",
+            description: "Existing folder to attach to. Use this to recover media filed under a dead id.",
+          },
+          rootFolderPath: {
+            type: "string",
+            description: "Root folder to create a new folder under, when not attaching to an existing path",
+          },
+          monitored: {
+            type: "boolean",
+            description: "Whether to monitor the item (default: true)",
+          },
+          search: {
+            type: "boolean",
+            description: "Trigger a download search after adding (default: false)",
+          },
+        },
+        required: ["key", "qualityProfileId"],
+      },
+    },
+    {
+      name: "whisparr_rescan_item",
+      description: "Rescan a library item's folder so files already on disk are re-detected. This is not whisparr_refresh_item: a refresh re-reads the metadata provider, a rescan re-reads the disk.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          itemId: {
+            type: "number",
+            description: "Library id of the item",
+          },
+        },
+        required: ["itemId"],
+      },
+    },
+    {
       name: "whisparr_refresh_item",
       description: "Trigger a metadata refresh for one Whisparr library item.",
       inputSchema: {
@@ -2518,6 +2598,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!clients.whisparr) throw new Error("Whisparr not configured");
         const itemId = (args as { itemId: number }).itemId;
         const result = await clients.whisparr.searchItem(itemId);
+        return jsonText({ triggered: true, commandId: result.id, itemId });
+      }
+
+      case "whisparr_check_folder": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const path = (args as { path: string }).path;
+        const [mediaFiles, contents] = await Promise.all([
+          clients.whisparr.getFolderMediaFiles(path),
+          clients.whisparr.getFolderContents(path),
+        ]);
+        return jsonText({
+          path,
+          mediaFileCount: mediaFiles.length,
+          mediaFiles: mediaFiles.slice(0, 50).map(f => f.name),
+          otherFileCount: Math.max(contents.files.length - mediaFiles.length, 0),
+          subfolderCount: contents.directories.length,
+          // Whisparr reports an empty folder and a missing one identically,
+          // so say what was observed rather than asserting the folder exists.
+          note: mediaFiles.length === 0
+            ? "No media files found here. The folder is empty, holds no video files, or does not exist."
+            : "Media present. If the library row for this path reports zero files, these are untracked.",
+        });
+      }
+
+      case "whisparr_delete_item": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const itemId = (args as { itemId: number }).itemId;
+        await clients.whisparr.deleteItem(itemId);
+        return jsonText({
+          deleted: true,
+          itemId,
+          filesDeleted: false,
+          importExclusionAdded: false,
+        });
+      }
+
+      case "whisparr_add_item": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const item = args as {
+          key: string;
+          qualityProfileId: number;
+          title?: string;
+          path?: string;
+          rootFolderPath?: string;
+          monitored?: boolean;
+          search?: boolean;
+        };
+        if (!item.path && !item.rootFolderPath) {
+          throw new Error("whisparr_add_item needs either path (an existing folder to attach to) or rootFolderPath");
+        }
+        const added = await clients.whisparr.addItem(item);
+        return jsonText({
+          added: true,
+          id: added.id,
+          title: added.title,
+          path: added.path,
+          key: whisparrItemKey(added) ?? null,
+          nextStep: item.path
+            ? "Call whisparr_rescan_item with this id so the files already in the folder are detected."
+            : null,
+        });
+      }
+
+      case "whisparr_rescan_item": {
+        if (!clients.whisparr) throw new Error("Whisparr not configured");
+        const itemId = (args as { itemId: number }).itemId;
+        const result = await clients.whisparr.rescanItem(itemId);
         return jsonText({ triggered: true, commandId: result.id, itemId });
       }
 
