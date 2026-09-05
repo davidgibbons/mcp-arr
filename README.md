@@ -349,7 +349,19 @@ Whisparr ships as two incompatible applications and the server detects which one
 | `whisparr_get_queue` | View current download queue with `limit` and `offset` pagination |
 | `whisparr_get_calendar` | See upcoming releases |
 | `whisparr_search_item` | Trigger a download search for one library item |
-| `whisparr_refresh_item` | Trigger a metadata refresh for one library item |
+| `whisparr_refresh_item` | Trigger a metadata refresh for one library item (re-reads the metadata provider) |
+| `whisparr_rescan_item` | Rescan a library item's folder so files already on disk are re-detected (re-reads the disk) |
+| `whisparr_check_folder` | List the media files Whisparr can see in a folder on disk |
+| `whisparr_add_item` | Add a site/scene by provider id, optionally attached to an existing folder |
+| `whisparr_delete_item` | Delete a library row, always keeping files and never adding an import-list exclusion |
+
+#### Recovering entries after `RemovedSeriesCheck` / `RemovedMovieCheck`
+
+When an *arr health check reports entries removed upstream, the id the app holds usually got **re-keyed**, not deleted - and a row whose id died reports zero files while its folder still holds the media, which puts those files outside the library entirely. The tools above are shaped for that check:
+
+1. `whisparr_search` the title. A result with `inLibrary: true` is a duplicate already sitting alongside the dead row; `inLibrary: false` with a `key` is a recoverable rematch; no results means the metadata really is gone.
+2. `whisparr_get_library` flags rows with `holdsNoFiles: true`. Run `whisparr_check_folder` on each one's `path` - media found there is untracked, and that is the finding worth reporting.
+3. To recover: `whisparr_delete_item` the dead row (files are always kept), `whisparr_add_item` the live `key` with `path` set to the existing folder, then `whisparr_rescan_item`.
 
 ### Configuration Review Tools
 
@@ -360,6 +372,7 @@ These tools are available for Sonarr, Radarr, Lidarr, and Whisparr. Replace `{se
 | `{service}_get_quality_profiles` | Detailed quality profile information with allowed qualities and custom format scores |
 | `{service}_get_health` | Health check warnings and issues detected by the application |
 | `{service}_get_root_folders` | Storage paths, free space, and accessibility status |
+| `{service}_get_remote_path_mappings` | Remote path mappings, each flagged with whether its host still matches a configured download client |
 | `{service}_get_download_clients` | Download client configurations and settings |
 | `{service}_get_naming` | File and folder naming conventions |
 | `{service}_get_tags` | Tag definitions for content organization |

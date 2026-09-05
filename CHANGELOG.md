@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
   Whisparr only appears in the generic search tools when it is configured, so an operator who has not opted in never sees adult results.
 
+- **Tools for recovering entries after `RemovedSeriesCheck` / `RemovedMovieCheck`.** `whisparr_check_folder` reports the media Whisparr can see in a folder, so a library row reporting zero files can be told apart from one whose files are silently untracked. `whisparr_delete_item` removes the row while always keeping files and never adding an import-list exclusion (neither is configurable: deleting files is wrong when only the metadata pointer broke, and the exclusion is keyed on the dead id so it protects nothing while blocking the replacement). `whisparr_add_item` takes a `path` so a live id can be attached to the folder that already holds the media, and `whisparr_rescan_item` re-reads the disk, which a metadata refresh does not do.
+- **`{service}_get_remote_path_mappings` for Sonarr, Radarr, Lidarr and Whisparr.** Mappings key on the download client's host *setting*, so renaming or moving a client orphans its mappings and every import fails while the app looks healthy elsewhere. The tool flags each mapping with whether its host still matches a configured download client rather than just listing them.
+
+### Fixed
+- **`radarr_delete_queue_item` always threw on success.** *arr DELETE endpoints answer with an empty body, which `response.json()` rejects, so the shared request path parsed a body that was not there. It now parses only when there is something to parse.
+
 ## [1.7.3] - 2026-07-29
 
 ### Fixed

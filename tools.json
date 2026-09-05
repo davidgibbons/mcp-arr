@@ -208,6 +208,15 @@
     }
   },
   {
+    "name": "sonarr_get_remote_path_mappings",
+    "description": "Get remote path mappings from Sonarr (TV), each flagged with whether its host still matches a configured download client. Mappings key on the client's host setting, so renaming or moving a client orphans its mappings and every import fails while the app looks healthy elsewhere.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
     "name": "sonarr_get_quality_profiles",
     "description": "Get detailed quality profiles from Sonarr. Shows allowed qualities, upgrade settings, and custom format scores.",
     "inputSchema": {
@@ -483,6 +492,15 @@
     }
   },
   {
+    "name": "radarr_get_remote_path_mappings",
+    "description": "Get remote path mappings from Radarr (Movies), each flagged with whether its host still matches a configured download client. Mappings key on the client's host setting, so renaming or moving a client orphans its mappings and every import fails while the app looks healthy elsewhere.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
     "name": "radarr_get_quality_profiles",
     "description": "Get detailed quality profiles from Radarr",
     "inputSchema": {
@@ -693,6 +711,15 @@
     }
   },
   {
+    "name": "lidarr_get_remote_path_mappings",
+    "description": "Get remote path mappings from Lidarr (Music), each flagged with whether its host still matches a configured download client. Mappings key on the client's host setting, so renaming or moving a client orphans its mappings and every import fails while the app looks healthy elsewhere.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
     "name": "lidarr_get_quality_profiles",
     "description": "Get detailed quality profiles from Lidarr",
     "inputSchema": {
@@ -794,6 +821,95 @@
       "type": "object",
       "properties": {},
       "required": []
+    }
+  },
+  {
+    "name": "whisparr_get_remote_path_mappings",
+    "description": "Get remote path mappings from Whisparr (Adult), each flagged with whether its host still matches a configured download client. Mappings key on the client's host setting, so renaming or moving a client orphans its mappings and every import fails while the app looks healthy elsewhere.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "whisparr_check_folder",
+    "description": "List the media files Whisparr can see in a folder on disk. Use it on a library row reporting zero files: files present there are media the app has stopped tracking (not renamed, not upgraded, not counted, not searched). An empty result means no media was found - the folder may be empty or may not exist.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute folder path, e.g. the path reported by whisparr_get_library"
+        }
+      },
+      "required": ["path"]
+    }
+  },
+  {
+    "name": "whisparr_delete_item",
+    "description": "Delete a library row. Files on disk are always kept and no import-list exclusion is added, so this is safe to use on a dead row whose media you intend to re-attach under a live id. It cannot be made to delete files.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "itemId": {
+          "type": "number",
+          "description": "Library id of the item, from whisparr_get_library"
+        }
+      },
+      "required": ["itemId"]
+    }
+  },
+  {
+    "name": "whisparr_add_item",
+    "description": "Add a site (V2) or scene (V3) by its provider id, from the key field of whisparr_search. Pass path to point the new row at a folder that already holds media - that is how a re-keyed entry is recovered - then call whisparr_rescan_item so the files are re-detected. Does not start a download search unless search is set.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Provider id from whisparr_search (tvdbId on V2, foreignId on V3)"
+        },
+        "qualityProfileId": {
+          "type": "number",
+          "description": "Quality profile id, from whisparr_get_quality_profiles"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title from the lookup result"
+        },
+        "path": {
+          "type": "string",
+          "description": "Existing folder to attach to. Use this to recover media filed under a dead id."
+        },
+        "rootFolderPath": {
+          "type": "string",
+          "description": "Root folder to create a new folder under, when not attaching to an existing path"
+        },
+        "monitored": {
+          "type": "boolean",
+          "description": "Whether to monitor the item (default: true)"
+        },
+        "search": {
+          "type": "boolean",
+          "description": "Trigger a download search after adding (default: false)"
+        }
+      },
+      "required": ["key", "qualityProfileId"]
+    }
+  },
+  {
+    "name": "whisparr_rescan_item",
+    "description": "Rescan a library item's folder so files already on disk are re-detected. This is not whisparr_refresh_item: a refresh re-reads the metadata provider, a rescan re-reads the disk.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "itemId": {
+          "type": "number",
+          "description": "Library id of the item"
+        }
+      },
+      "required": ["itemId"]
     }
   },
   {
