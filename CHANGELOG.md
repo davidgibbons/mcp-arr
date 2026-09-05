@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0](https://github.com/davidgibbons/mcp-arr/compare/mcp-arr-v1.7.3...mcp-arr-v1.8.0) (2026-09-05)
+
+
+### Added
+
+* **bazarr:** add Bazarr support for subtitle management ([d2c2427](https://github.com/davidgibbons/mcp-arr/commit/d2c2427d52e49e1adf016cf760bfa1dbf1ff5b39))
+* **chaptarr:** add Chaptarr support for audiobooks and eBooks ([bb127dc](https://github.com/davidgibbons/mcp-arr/commit/bb127dcbd69e2af27dfe1da593901f87b0a0fe2b))
+* expose remote path mappings for every configured service ([4aabda6](https://github.com/davidgibbons/mcp-arr/commit/4aabda65d15e2a5b4490e95177328b211f366c49))
+* **jellyseerr:** add Jellyseerr support for media requests ([cb4e6c2](https://github.com/davidgibbons/mcp-arr/commit/cb4e6c2e0e8cd30ea9946cfc7d7dfd7ca390d455))
+* **whisparr:** add client with runtime V2/V3 variant detection ([cbd5f0f](https://github.com/davidgibbons/mcp-arr/commit/cbd5f0f6cfc3635ed58da74432c1b6ad39b4ab36))
+* **whisparr:** add library, scene, queue and search tools ([823976a](https://github.com/davidgibbons/mcp-arr/commit/823976a0e6f94d4b76aed772852c995524d638fb))
+* **whisparr:** add the tools the RemovedSeriesCheck runbook needs ([09478d9](https://github.com/davidgibbons/mcp-arr/commit/09478d9fe8cf9c7f6f01e5d9112526bb15e33c4d))
+* **whisparr:** expose the shared configuration review tools ([21e9fe4](https://github.com/davidgibbons/mcp-arr/commit/21e9fe4d1363ec8cdec4235c059435583e0795bc))
+* **whisparr:** include Whisparr in unified and cross-service search ([a1fa048](https://github.com/davidgibbons/mcp-arr/commit/a1fa048025c40b8a8712acbd01e4d1c15e76e6fd))
+
+
+### Fixed
+
+* **client:** tolerate empty response bodies ([0408cb4](https://github.com/davidgibbons/mcp-arr/commit/0408cb49dd13a327056eab84b9ab2c8908bbf694))
+* **whisparr:** key items by the id each variant actually populates ([f2a9461](https://github.com/davidgibbons/mcp-arr/commit/f2a94610c10bd29b11036cae57de20ed8804faa6))
+
+
+### Build & CI
+
+* allow CI to be triggered manually ([cd92695](https://github.com/davidgibbons/mcp-arr/commit/cd926955852ef3f4686f72e7553f8ef66e3dabd3))
+* bound release-please to the fork point ([88a435d](https://github.com/davidgibbons/mcp-arr/commit/88a435dda161de5fbe541d7b112b5622a3e0ecb2))
+* drive releases with release-please ([705b1e0](https://github.com/davidgibbons/mcp-arr/commit/705b1e0328662b0ea5e3a7808cd8b48ee78d4d4f))
+* grant the release call the permissions release.yml declares ([755d5ac](https://github.com/davidgibbons/mcp-arr/commit/755d5acef5dc88bc282b3e9bb71984365fb8f308))
+* move everything to Node 24 ([244f4b7](https://github.com/davidgibbons/mcp-arr/commit/244f4b70b2c5ecbf290e45d8032fb3c510d4a8c3))
+* run the tests, and clear the dependency advisories ([6873c2b](https://github.com/davidgibbons/mcp-arr/commit/6873c2b8d85d8f676a57daca108c59419fcf7f6b))
+* test the Node versions that actually work ([7e4b271](https://github.com/davidgibbons/mcp-arr/commit/7e4b27160257bc447b27ba69cf2e1c2a584d974e))
+
+
+### Documentation
+
+* document the recovery tools and remote path mappings ([50131f2](https://github.com/davidgibbons/mcp-arr/commit/50131f2b3cdb9f0ce4339dbaa6e4303479ce1926))
+* document Whisparr configuration and tools ([768b679](https://github.com/davidgibbons/mcp-arr/commit/768b679eb93e7c78179394e5a84d57e19efc5772))
+* hand back the changelog to release-please ([730b4e6](https://github.com/davidgibbons/mcp-arr/commit/730b4e635aff09900491a2925b0c49b28ee7b5d4))
+* lead the Docker section with the published GHCR image ([c8e6cb7](https://github.com/davidgibbons/mcp-arr/commit/c8e6cb7de09c03169426ba0bb8877d639c10ba0e))
+* merge the two [Unreleased] changelog sections ([d2c1236](https://github.com/davidgibbons/mcp-arr/commit/d2c1236e111f7d6db1ac3a81b97a6a4862bb5e7a))
+* record the CI and dependency fixes in the changelog ([8bf21f8](https://github.com/davidgibbons/mcp-arr/commit/8bf21f8429a82f3e2246012110b2fbe2ff6b7432))
+* stop sending work upstream unless asked ([e344da1](https://github.com/davidgibbons/mcp-arr/commit/e344da1c9dc28f550f8dfd70ab2a2384bf4aba71))
+
 ## [1.7.3] - 2026-07-29
 
 ### Fixed
