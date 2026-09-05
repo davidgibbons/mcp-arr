@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   same `switch` as the shared ones and were therefore unreachable dead code. Removed the duplicate
   definitions and the dead cases; runtime behaviour is unchanged because the shared cases always won.
   This one is upstream's too and is being sent up separately.
+  `test/tool-catalogue.test.mjs` now asserts the advertised catalogue holds no repeated name and that
+  every configured service gets the shared config set exactly once.
 - **Node 18 was advertised as supported but does not work.** The HTTP transport regression test fails on
   Node 18 with `400 !== 200` — the very "Mcp-Session-Id header is required" bug it was written to catch.
   CI built and type-checked but never ran `node --test`, so this went unnoticed; it reproduces under
