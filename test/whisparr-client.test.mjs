@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { WhisparrClient } from "../dist/arr-client.js";
+import {
+  WhisparrClient,
+  whisparrFileCount,
+  whisparrItemKey,
+  whisparrSizeOnDisk,
+} from "../dist/arr-client.js";
 
 // Whisparr V2 (Sonarr fork) and V3 "Eros" (Radarr fork) both answer on
 // /api/v3 with the same auth header but expose different resources. The
@@ -116,4 +121,33 @@ test("an unrecognised version falls through to the current Eros shape", async ()
   } finally {
     fetchStub.restore();
   }
+});
+
+// Whisparr's two variants key their items differently, and the triage runbook
+// for RemovedSeriesCheck/RemovedMovieCheck turns on matching a library row
+// against a lookup result by that key and on spotting rows holding no files.
+
+test("item keys come from the field each variant actually populates", () => {
+  // V2 carries the TPDB site id in Sonarr's tvdbId field.
+  assert.equal(whisparrItemKey({ tvdbId: 4123 }), "4123");
+  // Eros keys scenes by a string foreignId and leaves tmdbId unset.
+  assert.equal(whisparrItemKey({ foreignId: "abc-123" }), "abc-123");
+  assert.equal(whisparrItemKey({ stashId: "stash-9" }), "stash-9");
+  // An unset id must not read as the real id 0, or every dead row collides.
+  assert.equal(whisparrItemKey({ tvdbId: 0, tmdbId: 0 }), undefined);
+  assert.equal(whisparrItemKey({}), undefined);
+});
+
+test("file counts and sizes read from either variant's shape", () => {
+  const v2Row = { statistics: { episodeFileCount: 12, sizeOnDisk: 2048 } };
+  const v3Row = { hasFile: true, sizeOnDisk: 1024, statistics: { movieFileCount: 1, sizeOnDisk: 1024 } };
+  const deadRow = { statistics: { episodeFileCount: 0, totalEpisodeCount: 31, sizeOnDisk: 0 } };
+
+  assert.equal(whisparrFileCount(v2Row), 12);
+  assert.equal(whisparrFileCount(v3Row), 1);
+  // The row this whole runbook is about: tracks nothing, may still hold media.
+  assert.equal(whisparrFileCount(deadRow), 0);
+  assert.equal(whisparrSizeOnDisk(v2Row), 2048);
+  assert.equal(whisparrSizeOnDisk(v3Row), 1024);
+  assert.equal(whisparrSizeOnDisk({}), 0);
 });

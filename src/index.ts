@@ -29,6 +29,9 @@ import {
   LidarrClient,
   ProwlarrClient,
   WhisparrClient,
+  whisparrItemKey,
+  whisparrFileCount,
+  whisparrSizeOnDisk,
   ArrService,
 } from "./arr-client.js";
 import { trashClient, TrashService } from "./trash-client.js";
@@ -1242,14 +1245,14 @@ async function runUnifiedSearch(query: string): Promise<SearchEntry[]> {
     const items = await clients.whisparr.searchLibrary(trimmedQuery);
     results.push(
       ...items
-        .map((item) => ({ item, foreignId: item.tvdbId ?? item.tmdbId }))
-        // Without a foreign id there is nothing stable for fetch to resolve.
-        .filter((entry): entry is { item: typeof entry.item; foreignId: number } => entry.foreignId !== undefined)
+        .map((item) => ({ item, key: whisparrItemKey(item) }))
+        // Without a provider id there is nothing stable for fetch to resolve.
+        .filter((entry): entry is { item: typeof entry.item; key: string } => entry.key !== undefined)
         .slice(0, 5)
-        .map(({ item, foreignId }) => ({
-          id: `arr:whisparr:${type}:${foreignId}`,
+        .map(({ item, key }) => ({
+          id: `arr:whisparr:${type}:${key}`,
           title: `${item.title}${item.year ? ` (${item.year})` : ""}`,
-          url: buildResourceUrl(`arr/whisparr/${type}/${foreignId}`),
+          url: buildResourceUrl(`arr/whisparr/${type}/${encodeURIComponent(key)}`),
           type,
           service: "whisparr",
           summary: item.overview?.slice(0, 220),
@@ -1335,9 +1338,8 @@ async function fetchSearchEntry(id: string): Promise<unknown> {
   }
 
   if (service === "whisparr" && (subtype === "site" || subtype === "scene") && clients.whisparr) {
-    const foreignId = Number(rawId);
     const matches = (await clients.whisparr.searchLibrary(rawId)).filter(
-      (item) => (item.tvdbId ?? item.tmdbId) === foreignId
+      (item) => whisparrItemKey(item) === rawId
     );
     return {
       id,
@@ -2435,18 +2437,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ? normalizedOffset + normalizedLimit
             : null,
           search: search ?? null,
-          items: pagedItems.map(item => ({
-            id: item.id,
-            title: item.title,
-            year: item.year,
-            status: item.status,
-            monitored: item.monitored,
-            path: item.path,
-            // Series keeps its totals under statistics, Movie reports them flat.
-            sizeOnDisk: formatBytes(
-              ('statistics' in item ? item.statistics?.sizeOnDisk : item.sizeOnDisk) || 0
-            ),
-          })),
+          items: pagedItems.map(item => {
+            const fileCount = whisparrFileCount(item);
+            return {
+              id: item.id,
+              title: item.title,
+              year: item.year,
+              status: item.status,
+              monitored: item.monitored,
+              path: item.path,
+              // The provider id, so a row can be matched against a lookup
+              // result. Missing means the row cannot be re-added or matched.
+              key: whisparrItemKey(item) ?? null,
+              fileCount,
+              sizeOnDisk: formatBytes(whisparrSizeOnDisk(item)),
+              // A row holding no files may simply be unaired, or may have lost
+              // its file mapping to a dead upstream id. whisparr_check_folder
+              // tells the two apart.
+              holdsNoFiles: fileCount === 0,
+            };
+          }),
         });
       }
 
@@ -2459,12 +2469,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           variant,
           itemType: variant === 'v2' ? 'site' : 'scene',
           count: results.length,
+          // A live id that is already in the library comes back with that
+          // row's id; one that is not carries id 0. An empty result set is
+          // the only evidence that upstream metadata is genuinely gone.
           results: results.slice(0, 10).map(r => ({
             title: r.title,
             year: r.year,
-            tvdbId: r.tvdbId,
-            tmdbId: r.tmdbId,
-            imdbId: r.imdbId,
+            key: whisparrItemKey(r) ?? null,
+            inLibrary: r.id > 0,
+            libraryId: r.id > 0 ? r.id : null,
+            path: r.id > 0 ? r.path : null,
+            fileCount: r.id > 0 ? whisparrFileCount(r) : null,
             overview: r.overview?.substring(0, 200) + (r.overview && r.overview.length > 200 ? '...' : ''),
           })),
         });

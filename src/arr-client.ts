@@ -926,8 +926,85 @@ export class ProwlarrClient extends ArrClient {
  */
 export type WhisparrVariant = 'v2' | 'v3';
 
-/** A Whisparr library item: a site under V2, a scene under V3. */
-export type WhisparrItem = Series | Movie;
+/**
+ * A Whisparr library item: a site under V2, a scene under V3.
+ *
+ * Deliberately not `Series | Movie`. Whisparr's resources diverge from
+ * Radarr's and Sonarr's in the fields that matter most here - Eros keys
+ * scenes by a string `foreignId` (the stash id) and leaves `tmdbId` unset,
+ * while V2 stuffs the TPDB site id into `tvdbId` - so this describes what
+ * Whisparr actually returns rather than borrowing another app's shape.
+ */
+export interface WhisparrItem {
+  id: number;
+  title: string;
+  sortTitle?: string;
+  status?: string;
+  overview?: string;
+  year: number;
+  path: string;
+  rootFolderPath?: string;
+  folder?: string;
+  qualityProfileId: number;
+  monitored: boolean;
+  added?: string;
+  tags?: number[];
+  titleSlug?: string;
+  images?: Array<{ coverType: string; url: string }>;
+  /** V2: the TPDB site id, carried in Sonarr's tvdbId field. */
+  tvdbId?: number;
+  /** V3 (Eros): the canonical stash id. tmdbId is usually absent for scenes. */
+  foreignId?: string;
+  stashId?: string;
+  tpdbId?: string;
+  tmdbId?: number;
+  imdbId?: string;
+  /** V3 only. */
+  hasFile?: boolean;
+  sizeOnDisk?: number;
+  statistics?: {
+    /** V2 */
+    seasonCount?: number;
+    episodeFileCount?: number;
+    episodeCount?: number;
+    totalEpisodeCount?: number;
+    /** V3 */
+    movieFileCount?: number;
+    sizeOnDisk?: number;
+  };
+}
+
+/**
+ * The id Whisparr's metadata provider keys an item by, as a string.
+ *
+ * This is what a library row and a lookup result have in common, so it is
+ * what identifies "the same site/scene" across the two. Undefined means the
+ * item cannot be re-added or matched, which is itself worth reporting.
+ */
+export function whisparrItemKey(item: WhisparrItem): string | undefined {
+  const key = item.foreignId ?? item.stashId ?? item.tpdbId ?? item.tvdbId ?? item.tmdbId;
+  return key === undefined || key === 0 || key === '' ? undefined : String(key);
+}
+
+/**
+ * How many media files the library row believes it holds.
+ *
+ * A row reporting zero while its folder still holds media is the signature of
+ * a dead upstream id: the app has lost the file mapping and the media is no
+ * longer tracked, renamed, upgraded or searched.
+ */
+export function whisparrFileCount(item: WhisparrItem): number {
+  return (
+    item.statistics?.episodeFileCount ??
+    item.statistics?.movieFileCount ??
+    (item.hasFile ? 1 : 0)
+  );
+}
+
+/** Bytes the library row accounts for. V2 nests it, V3 also reports it flat. */
+export function whisparrSizeOnDisk(item: WhisparrItem): number {
+  return item.statistics?.sizeOnDisk ?? item.sizeOnDisk ?? 0;
+}
 
 export class WhisparrClient extends ArrClient {
   private variant?: WhisparrVariant;
@@ -968,10 +1045,14 @@ export class WhisparrClient extends ArrClient {
   }
 
   /**
-   * Look up sites/scenes by name
+   * Look up sites/scenes by name against Whisparr's metadata provider.
+   *
+   * Results carry a non-zero `id` when the item is already in the library -
+   * the lookup maps matches onto the existing row - so this one call answers
+   * both "does a live id still exist" and "is it already here".
    */
-  async searchLibrary(term: string): Promise<SearchResult[]> {
-    return this['request']<SearchResult[]>(`/${await this.resource()}/lookup?term=${encodeURIComponent(term)}`);
+  async searchLibrary(term: string): Promise<WhisparrItem[]> {
+    return this['request']<WhisparrItem[]>(`/${await this.resource()}/lookup?term=${encodeURIComponent(term)}`);
   }
 
   /**
