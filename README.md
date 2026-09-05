@@ -296,6 +296,29 @@ The existing service-specific tools remain available for richer local or power-u
 
 ## Available Tools
 
+Every tool is published with [MCP tool annotations](https://modelcontextprotocol.io/specification/server/tools#tool-annotations),
+so a client can tell reads from writes without parsing descriptions:
+
+| Annotation | Meaning here |
+|---|---|
+| `readOnlyHint: true` | Changes nothing. 107 of the 131 tools. |
+| `readOnlyHint: false` | Changes state in an *arr service. 24 tools. |
+| `destructiveHint: true` | Removes something or irreversibly commits it: `radarr_delete_queue_item`, `whisparr_delete_item`, `radarr_update_movie`, `jellyseerr_approve_request`, `jellyseerr_decline_request`. |
+| `openWorldHint: true` | Reaches a third party — metadata providers, indexers, subtitle providers, the TRaSH Guides repo. Slow and rate-limited. |
+
+The 24 writing tools add library rows (`*_add_*`), trigger real downloads
+(`*_search_missing`, `radarr_search_movie`, `chaptarr_trigger_book_search`, …),
+refresh or rescan items, and approve or decline Jellyseerr requests.
+
+> **Watch the verb.** `sonarr_search`, `radarr_search`, `lidarr_search`,
+> `whisparr_search`, `chaptarr_search` and `jellyseerr_search` are metadata
+> **lookups** and change nothing. But `sonarr_search_missing`,
+> `sonarr_search_episode`, `radarr_search_movie`, `radarr_search_movies`,
+> `lidarr_search_album`, `lidarr_search_missing`, `whisparr_search_item` and
+> `chaptarr_search_missing` **trigger real downloads**. Same verb, opposite blast
+> radius — which is exactly why the annotations are worth reading instead of the
+> names.
+
 ### General Tools
 
 | Tool | Description |

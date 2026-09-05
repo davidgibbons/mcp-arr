@@ -1676,6 +1676,99 @@ TOOLS.push(
   }
 );
 
+// --- Tool mutation classification -------------------------------------------
+//
+// One classification, two consumers: the MCP annotations attached just below,
+// and the read-only access gate. A second list kept somewhere else is how the
+// two drift apart, and a drift here silently hands a write tool to a reader.
+//
+// A tool absent from MUTATING_TOOLS is a read. That default is deliberate: the
+// generated per-service config tools (`<service>_get_*`, `<service>_review_setup`)
+// are all reads, so they need no upkeep here. Every mutating tool is named
+// explicitly instead, and the catalogue test asserts each of these names really
+// exists — so renaming a tool without updating this list fails the build rather
+// than quietly demoting a write tool to a read.
+
+// Tools that remove something or irreversibly commit it. A subset of MUTATING_TOOLS.
+const DESTRUCTIVE_TOOLS: ReadonlySet<string> = new Set([
+  "radarr_delete_queue_item",   // removes a queue item, optionally blocklisting the release
+  "whisparr_delete_item",       // deletes a library row (files on disk are kept)
+  "radarr_update_movie",        // overwrites qualityProfileId / monitored / path
+  "jellyseerr_approve_request", // hands the request to Sonarr/Radarr; starts a real download
+  "jellyseerr_decline_request", // closes the request
+]);
+
+// Every tool that changes state in an *arr service, including the destructive
+// ones above. Note the naming trap this makes machine-readable: `<service>_search`
+// is a metadata lookup and a read, while `<service>_search_missing`,
+// `radarr_search_movie` and friends trigger real downloads.
+const MUTATING_TOOLS: ReadonlySet<string> = new Set([
+  ...DESTRUCTIVE_TOOLS,
+  // Add library rows
+  "sonarr_add_series",
+  "radarr_add_movie",
+  "lidarr_add_artist",
+  "whisparr_add_item",
+  "chaptarr_add_author",
+  // Trigger download searches
+  "sonarr_search_missing",
+  "sonarr_search_episode",
+  "radarr_search_movie",
+  "radarr_search_movies",
+  "lidarr_search_album",
+  "lidarr_search_missing",
+  "whisparr_search_item",
+  "chaptarr_trigger_book_search",
+  "chaptarr_search_missing",
+  // Refresh / rescan
+  "sonarr_refresh_series",
+  "radarr_refresh_movie",
+  "whisparr_rescan_item",
+  "whisparr_refresh_item",
+  "chaptarr_refresh_author",
+]);
+
+// Reads that reach outside the user's own *arr stack — metadata providers,
+// indexers, subtitle providers, and the TRaSH Guides repo on GitHub. They are
+// slow and rate-limited, and what they return is not the local library.
+const OPEN_WORLD_TOOLS: ReadonlySet<string> = new Set([
+  "search",
+  "fetch",
+  "arr_search_all",
+  "sonarr_search",
+  "radarr_search",
+  "lidarr_search",
+  "whisparr_search",
+  "chaptarr_search",
+  "chaptarr_search_book",
+  "jellyseerr_search",
+  "prowlarr_search",
+  "prowlarr_test_indexers",
+  "bazarr_search_episode_subtitles",
+  "bazarr_search_movie_subtitles",
+  "trash_list_profiles",
+  "trash_get_profile",
+  "trash_list_custom_formats",
+  "trash_get_naming",
+  "trash_get_quality_sizes",
+  "trash_compare_profile",
+  "trash_compare_naming",
+]);
+
+// Attach MCP tool annotations so a client can tell reads from writes without
+// parsing 131 descriptions. Both hints are set explicitly on every tool because
+// the spec defaults are wrong for this server: `readOnlyHint` defaults to false
+// (marking every read as a write) and `openWorldHint` defaults to true (marking
+// every local library query as reaching the open internet).
+for (const tool of TOOLS) {
+  const mutating = MUTATING_TOOLS.has(tool.name);
+  tool.annotations = {
+    readOnlyHint: !mutating,
+    openWorldHint: OPEN_WORLD_TOOLS.has(tool.name),
+    ...(mutating ? { destructiveHint: DESTRUCTIVE_TOOLS.has(tool.name) } : {}),
+  };
+}
+
 // Build a fresh MCP server instance with all request handlers registered.
 // The HTTP transport builds a new instance per request (see startHttpServer)
 // so concurrent / long-lived transports never share a single server. A shared
