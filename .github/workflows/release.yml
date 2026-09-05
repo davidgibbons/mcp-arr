@@ -6,9 +6,17 @@ name: Release
 # package.json is "private": true. Everything here uses the per-run,
 # auto-expiring GITHUB_TOKEN; the project stores no long-lived registry token.
 #
-# Release flow:
-#   1. bump package.json + CHANGELOG, commit
-#   2. git tag vX.Y.Z && git push --tags   (this workflow builds image + release)
+# Release flow (normal): release-please maintains a release PR from the
+# conventional commits on main. Merging it bumps package.json + CHANGELOG,
+# tags, and cuts the GitHub Release - then release-please.yml CALLS this
+# workflow to build the image.
+#
+# It calls rather than relying on the tag push because a tag created by a
+# workflow using GITHUB_TOKEN does not trigger other workflows. Wiring the two
+# together directly avoids needing a stored PAT purely to defeat that.
+#
+# The tag trigger below remains for a hand-cut tag, and workflow_dispatch for
+# a manual re-run.
 
 on:
   push:
@@ -20,6 +28,17 @@ on:
         description: 'Version to release (e.g. 1.6.4) — must match package.json and exist in CHANGELOG.md'
         required: true
         type: string
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to build, without the leading v. The tag must already exist.'
+        required: true
+        type: string
+      skip_github_release:
+        description: 'Skip cutting a GitHub Release - release-please already made one.'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release-${{ github.ref }}
@@ -55,7 +74,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          # A called workflow inherits the caller's event_name and ref, so the
+          # ref is useless for identifying the release - an explicit input is
+          # the only reliable signal. Prefer it whenever it is set.
+          if [ -n "${INPUT_VERSION:-}" ]; then
             VERSION="$INPUT_VERSION"
             TAG="v${VERSION}"
           else
@@ -117,6 +139,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -137,6 +161,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -171,12 +197,17 @@ jobs:
   # ── 4. GitHub Release ───────────────────────────────────────────────────────
   github-release:
     needs: [prepare, build-test]
+    # release-please cuts its own Release; cutting a second one here would
+    # either fail or overwrite its notes.
+    if: ${{ inputs.skip_github_release != true }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Extract changelog notes
         env:

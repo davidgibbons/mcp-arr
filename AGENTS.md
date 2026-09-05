@@ -143,15 +143,27 @@ This fork distributes a **container image only** — there is no npm package.
 `npm publish` (npm's own private check does not fire until after auth, so the
 script is what actually enforces it).
 
-1. Add a `## [X.Y.Z]` section to CHANGELOG.md (the release workflow reads it and
-   fails the release if it is missing).
-2. `npm version patch|minor|major` — bumps package.json, commits, tags.
-3. `git push && git push --tags`
+Releases are driven by **release-please** from conventional commits, so do not
+bump the version or write changelog entries by hand.
 
-Pushing the tag is the whole release: `.github/workflows/release.yml` builds and
-pushes `ghcr.io/davidgibbons/mcp-arr` (amd64 + arm64, tagged `X.Y.Z`, `X.Y`, `X`,
-`latest`) and cuts the GitHub Release from the changelog section. It authenticates
-with the per-run `GITHUB_TOKEN`; the project stores no long-lived registry token.
+1. Land work on `main` with conventional commit subjects (`feat:`, `fix:`,
+   `ci:`, `docs:`…). The subject line is what appears in the release notes.
+2. release-please keeps a **release PR** open, showing the next version and the
+   changelog it will write. Merge it when you want to release.
+3. Merging it bumps `package.json`, updates `CHANGELOG.md`, tags `vX.Y.Z`, cuts
+   the GitHub Release, and then **calls** `release.yml` to build and push
+   `ghcr.io/davidgibbons/mcp-arr` (amd64 + arm64, tagged `X.Y.Z`, `X.Y`, `X`,
+   `latest`).
+
+Version bumps follow the commits: `fix:` → patch, `feat:` → minor, `feat!:` or a
+`BREAKING CHANGE:` footer → major. To force a specific version, put
+`Release-As: X.Y.Z` in a commit body.
+
+`release-please.yml` **calls** `release.yml` rather than letting its tag push
+trigger it, because a tag created by a workflow using `GITHUB_TOKEN` does not
+trigger other workflows. Wiring them together directly keeps the project free of
+a stored PAT whose only job would be to defeat that rule. `release.yml` still
+accepts a hand-cut tag or a `workflow_dispatch` for a manual rebuild.
 
 ## API Patterns
 

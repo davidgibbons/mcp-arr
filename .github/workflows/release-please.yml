@@ -1,0 +1,48 @@
+name: Release Please
+
+# Maintains a release PR from the conventional commits landing on main. Merging
+# that PR bumps package.json + CHANGELOG.md, tags the commit, and cuts the
+# GitHub Release.
+#
+# It then CALLS release.yml to build and push the container image. That call is
+# deliberate: a tag created by a workflow using GITHUB_TOKEN does not trigger
+# other workflows, so release.yml's own `on: push: tags` would never fire here.
+# Calling it keeps the project free of a stored PAT whose only purpose would be
+# to work around that rule.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # create the release commit, tag and Release
+      pull-requests: write   # open and update the release PR
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Only runs on the push that merges the release PR.
+  publish-image:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.release-please.outputs.version }}
+      skip_github_release: true

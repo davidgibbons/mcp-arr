@@ -68,6 +68,10 @@ image, its tags, and stdio/HTTP invocations.
 docker pull ghcr.io/davidgibbons/mcp-arr:latest
 ```
 
+> Images are published by the release workflow on each version tag. Until this
+> fork's first release lands there is no image to pull yet — build [from
+> source](#from-source) in the meantime.
+
 > **Reaching your *arr services from the container.** `http://localhost:8989` inside a
 > container points at the *container*, not your host. Use `http://host.docker.internal:8989`
 > (Docker Desktop on macOS/Windows), the service's LAN IP or container name (if they share a
