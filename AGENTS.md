@@ -100,12 +100,22 @@ npm run build
 timeout 10 node dist/index.js
 ```
 
-### Publishing
+### Releasing
 
-1. Update CHANGELOG.md
-2. `npm version patch|minor|major`
+This fork distributes a **container image only** — there is no npm package.
+`package.json` is `"private": true`, and a `prepublishOnly` script hard-fails any
+`npm publish` (npm's own private check does not fire until after auth, so the
+script is what actually enforces it).
+
+1. Add a `## [X.Y.Z]` section to CHANGELOG.md (the release workflow reads it and
+   fails the release if it is missing).
+2. `npm version patch|minor|major` — bumps package.json, commits, tags.
 3. `git push && git push --tags`
-4. `npm publish`
+
+Pushing the tag is the whole release: `.github/workflows/release.yml` builds and
+pushes `ghcr.io/davidgibbons/mcp-arr` (amd64 + arm64, tagged `X.Y.Z`, `X.Y`, `X`,
+`latest`) and cuts the GitHub Release from the changelog section. It authenticates
+with the per-run `GITHUB_TOKEN`; the project stores no long-lived registry token.
 
 ## API Patterns
 
@@ -117,6 +127,13 @@ All *arr services follow similar REST patterns:
 - DELETE `/api/v3/{resource}/{id}` - Delete
 - POST `/api/v3/command` - Trigger actions (search, refresh, etc.)
 
-## Pre-Publish
+## Fork
 
-Run `/publish-mcp` before any `npm publish` — mandatory pipeline that handles tests, secret scan, sanitize, docs check, version bump, tag, push, and publish in strict order. Do not run `npm publish` directly.
+This repo is a fork of [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr)
+(MIT, © Jim Christian). Upstream is deliberately scoped to Sonarr/Radarr/Lidarr/Prowlarr;
+this fork carries the wider *arr stack. `main` here is the primary branch — do not
+assume upstream will take changes.
+
+Send **non-scope** fixes (bugs in shared code paths that affect upstream too) up as
+their own small PR against `upstream/main`, separate from any service-expansion work,
+so a scope decision doesn't take a real fix down with it.

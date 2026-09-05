@@ -6,15 +6,19 @@
   <img src="docs/mcp-arr-logo.png" alt="MCP *arr Server" width="400">
 </p> -->
 
-[![Oathe Security](https://img.shields.io/endpoint?url=https%3A%2F%2Faudit-engine.oathe.ai%2Fapi%2Fbadge%2Faplaceforallmystuff%2Fmcp-arr&style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCcgZmlsbD0nd2hpdGUnPjxwYXRoIGQ9J00xMiAyQzkuMjQgMiA3IDQuMjQgNyA3djNINmMtMS4xIDAtMiAuOS0yIDJ2OGMwIDEuMS45IDIgMiAyaDEyYzEuMSAwIDItLjkgMi0ydi04YzAtMS4xLS45LTItMi0yaC0xVjdjMC0yLjc2LTIuMjQtNS01LTV6bTMgMTBIOVY3YzAtMS42NiAxLjM0LTMgMy0zczMgMS4zNCAzIDN2M3onLz48L3N2Zz4=&labelColor=000000&cacheSeconds=3600)](https://oathe.ai/report/aplaceforallmystuff/mcp-arr)
-[![npm version](https://img.shields.io/npm/v/mcp-arr-server.svg)](https://www.npmjs.com/package/mcp-arr-server)
-[![CI](https://github.com/aplaceforallmystuff/mcp-arr/actions/workflows/ci.yml/badge.svg)](https://github.com/aplaceforallmystuff/mcp-arr/actions/workflows/ci.yml)
+[![Oathe Security](https://img.shields.io/endpoint?url=https%3A%2F%2Faudit-engine.oathe.ai%2Fapi%2Fbadge%2Fdavidgibbons%2Fmcp-arr&style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCcgZmlsbD0nd2hpdGUnPjxwYXRoIGQ9J00xMiAyQzkuMjQgMiA3IDQuMjQgNyA3djNINmMtMS4xIDAtMiAuOS0yIDJ2OGMwIDEuMS45IDIgMiAyaDEyYzEuMSAwIDItLjkgMi0ydi04YzAtMS4xLS45LTItMi0yaC0xVjdjMC0yLjc2LTIuMjQtNS01LTV6bTMgMTBIOVY3YzAtMS42NiAxLjM0LTMgMy0zczMgMS4zNCAzIDN2M3onLz48L3N2Zz4=&labelColor=000000&cacheSeconds=3600)](https://oathe.ai/report/davidgibbons/mcp-arr)
+[![Container](https://img.shields.io/badge/ghcr.io-davidgibbons%2Fmcp--arr-blue?logo=docker&logoColor=white)](https://github.com/davidgibbons/mcp-arr/pkgs/container/mcp-arr)
+[![CI](https://github.com/davidgibbons/mcp-arr/actions/workflows/ci.yml/badge.svg)](https://github.com/davidgibbons/mcp-arr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 
 MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, Prowlarr, and Whisparr.
 
 Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP mode for hosted MCP clients such as ChatGPT connectors.
+
+> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr today, more to come. Fixes that aren't scope-related are still sent upstream.
+>
+> Distributed as a **container image only**; there is no npm package for this fork.
 
 ## Why Use This?
 
@@ -51,17 +55,27 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
 
 ## Installation
 
-### Using npm (Recommended)
+This fork ships as a container image only. See [Docker](#docker) below for the
+image, its tags, and stdio/HTTP invocations.
 
 ```bash
-npx mcp-arr-server
+docker pull ghcr.io/davidgibbons/mcp-arr:latest
+```
+
+> **Reaching your *arr services from the container.** `http://localhost:8989` inside a
+> container points at the *container*, not your host. Use `http://host.docker.internal:8989`
+> (Docker Desktop on macOS/Windows), the service's LAN IP or container name (if they share a
+> Docker network), or run with `--network host` on Linux.
+
+### From source
+
+```bash
+git clone https://github.com/davidgibbons/mcp-arr.git
+cd mcp-arr && npm ci && npm run build
+node dist/index.js
 ```
 
 ### Remote HTTP Mode
-
-```bash
-MCP_TRANSPORT=http PORT=3000 npx mcp-arr-server
-```
 
 By default the remote server listens on `127.0.0.1:3000` and serves MCP on `/mcp`.
 
@@ -78,7 +92,7 @@ Prebuilt images are published to GitHub Container Registry on every release. You
 build anything:
 
 ```bash
-docker pull ghcr.io/aplaceforallmystuff/mcp-arr:latest
+docker pull ghcr.io/davidgibbons/mcp-arr:latest
 ```
 
 Tags follow the release version — `latest`, `1`, `1.7`, and each exact version such as `1.7.3`.
@@ -90,7 +104,7 @@ Run in local stdio mode:
 docker run --rm -i \
   -e SONARR_URL=http://host.docker.internal:8989 \
   -e SONARR_API_KEY=your-sonarr-api-key \
-  ghcr.io/aplaceforallmystuff/mcp-arr:latest
+  ghcr.io/davidgibbons/mcp-arr:latest
 ```
 
 Run in remote HTTP mode:
@@ -102,7 +116,7 @@ docker run --rm -p 3000:3000 \
   -e PORT=3000 \
   -e SONARR_URL=http://host.docker.internal:8989 \
   -e SONARR_API_KEY=your-sonarr-api-key \
-  ghcr.io/aplaceforallmystuff/mcp-arr:latest
+  ghcr.io/davidgibbons/mcp-arr:latest
 ```
 
 Minimal `docker-compose.yml`:
@@ -110,7 +124,7 @@ Minimal `docker-compose.yml`:
 ```yaml
 services:
   mcp-arr:
-    image: ghcr.io/aplaceforallmystuff/mcp-arr:latest
+    image: ghcr.io/davidgibbons/mcp-arr:latest
     ports:
       - "3000:3000"
     environment:
@@ -134,7 +148,7 @@ docker build -t mcp-arr .
 ### From Source
 
 ```bash
-git clone https://github.com/aplaceforallmystuff/mcp-arr.git
+git clone https://github.com/davidgibbons/mcp-arr.git
 cd mcp-arr
 npm install
 npm run build
@@ -163,18 +177,18 @@ Add to your Claude Desktop config file:
 {
   "mcpServers": {
     "arr": {
-      "command": "npx",
-      "args": ["-y", "mcp-arr-server"],
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "SONARR_URL", "-e", "SONARR_API_KEY", "-e", "RADARR_URL", "-e", "RADARR_API_KEY", "-e", "LIDARR_URL", "-e", "LIDARR_API_KEY", "-e", "PROWLARR_URL", "-e", "PROWLARR_API_KEY", "-e", "WHISPARR_URL", "-e", "WHISPARR_API_KEY", "ghcr.io/davidgibbons/mcp-arr:latest"],
       "env": {
-        "SONARR_URL": "http://localhost:8989",
+        "SONARR_URL": "http://host.docker.internal:8989",
         "SONARR_API_KEY": "your-sonarr-api-key",
-        "RADARR_URL": "http://localhost:7878",
+        "RADARR_URL": "http://host.docker.internal:7878",
         "RADARR_API_KEY": "your-radarr-api-key",
-        "LIDARR_URL": "http://localhost:8686",
+        "LIDARR_URL": "http://host.docker.internal:8686",
         "LIDARR_API_KEY": "your-lidarr-api-key",
-        "PROWLARR_URL": "http://localhost:9696",
+        "PROWLARR_URL": "http://host.docker.internal:9696",
         "PROWLARR_API_KEY": "your-prowlarr-api-key",
-        "WHISPARR_URL": "http://localhost:6969",
+        "WHISPARR_URL": "http://host.docker.internal:6969",
         "WHISPARR_API_KEY": "your-whisparr-api-key"
       }
     }
@@ -190,12 +204,12 @@ Add to `~/.claude.json`:
 {
   "mcpServers": {
     "arr": {
-      "command": "npx",
-      "args": ["-y", "mcp-arr-server"],
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "SONARR_URL", "-e", "SONARR_API_KEY", "-e", "RADARR_URL", "-e", "RADARR_API_KEY", "ghcr.io/davidgibbons/mcp-arr:latest"],
       "env": {
-        "SONARR_URL": "http://localhost:8989",
+        "SONARR_URL": "http://host.docker.internal:8989",
         "SONARR_API_KEY": "your-sonarr-api-key",
-        "RADARR_URL": "http://localhost:7878",
+        "RADARR_URL": "http://host.docker.internal:7878",
         "RADARR_API_KEY": "your-radarr-api-key"
       }
     }
@@ -415,7 +429,7 @@ npm run watch
 npm run build
 
 # Run locally
-SONARR_URL="http://localhost:8989" SONARR_API_KEY="your-key" node dist/index.js
+SONARR_URL="http://host.docker.internal:8989" SONARR_API_KEY="your-key" node dist/index.js
 ```
 
 ## Troubleshooting
@@ -423,7 +437,7 @@ SONARR_URL="http://localhost:8989" SONARR_API_KEY="your-key" node dist/index.js
 ### "No *arr services configured"
 Ensure you have set at least one pair of URL and API_KEY environment variables:
 ```bash
-SONARR_URL="http://localhost:8989"
+SONARR_URL="http://host.docker.internal:8989"
 SONARR_API_KEY="your-api-key"
 ```
 
@@ -449,4 +463,4 @@ MIT - see [LICENSE](LICENSE) for details.
 - [TRaSH Guides](https://trash-guides.info/) - Quality profiles, custom formats, and setup guides
 - [Sonarr API Docs](https://sonarr.tv/docs/api/)
 - [Model Context Protocol](https://modelcontextprotocol.io)
-- [GitHub Repository](https://github.com/aplaceforallmystuff/mcp-arr)
+- [GitHub Repository](https://github.com/davidgibbons/mcp-arr)

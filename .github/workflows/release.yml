@@ -2,14 +2,13 @@ name: Release
 
 # Builds the Docker image (-> GHCR) and the GitHub Release on every version tag.
 #
-# npm publishing is intentionally NOT automated here. It is done manually so the
-# project holds no long-lived npm token. Everything in this workflow uses the
-# per-run, auto-expiring GITHUB_TOKEN only — there is nothing to store or rotate.
+# This fork publishes a container image only — there is no npm package, and
+# package.json is "private": true. Everything here uses the per-run,
+# auto-expiring GITHUB_TOKEN; the project stores no long-lived registry token.
 #
 # Release flow:
 #   1. bump package.json + CHANGELOG, commit
 #   2. git tag vX.Y.Z && git push --tags   (this workflow builds image + release)
-#   3. npm publish                          (manual, passkey-gated)
 
 on:
   push:

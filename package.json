@@ -1,8 +1,7 @@
 {
-  "name": "mcp-arr-server",
+  "name": "mcp-arr",
   "version": "1.7.3",
-  "mcpName": "io.github.aplaceforallmystuff/mcp-arr",
-  "description": "MCP server for *arr media management suite - Sonarr, Radarr, Lidarr, Prowlarr, Whisparr",
+  "description": "MCP server for the *arr media management suite - Sonarr, Radarr, Lidarr, Prowlarr, Whisparr. Fork of aplaceforallmystuff/mcp-arr with wider *arr coverage.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -17,9 +16,7 @@
     "test": "npm run build && node --test",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
-    "sync-server-json": "node scripts/sync-server-json.mjs",
-    "version": "npm run sync-server-json && git add server.json",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "echo \"mcp-arr is a container-only fork; publish the GHCR image via a version tag instead.\" >&2 && exit 1"
   },
   "keywords": [
     "mcp",
@@ -49,6 +46,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aplaceforallmystuff/mcp-arr.git"
-  }
+    "url": "git+https://github.com/davidgibbons/mcp-arr.git"
+  },
+  "private": true,
+  "contributors": [
+    "David Gibbons <david@dgibbons.net>"
+  ],
+  "bugs": {
+    "url": "https://github.com/davidgibbons/mcp-arr/issues"
+  },
+  "homepage": "https://github.com/davidgibbons/mcp-arr#readme"
 }

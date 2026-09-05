@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **This repository is now a primary fork**, not a staging area for upstream PRs. Upstream
+  ([aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr)) is deliberately
+  scoped to Sonarr/Radarr/Lidarr/Prowlarr — its maintainer closed a clean Readarr PR (#14) on those
+  grounds — so wider *arr coverage continues here. Non-scope fixes are still sent upstream on their
+  own; the empty-response-body fix went up as upstream #41.
+- **Distribution is the container image only.** The npm package (`mcp-arr-server`) belongs to
+  upstream and is not republished from this fork. `package.json` is now `private`, with a
+  `prepublishOnly` gate that hard-fails `npm publish`. Images publish to
+  `ghcr.io/davidgibbons/mcp-arr` on every version tag, unchanged in mechanism.
+- Project identity repointed to the fork: `package.json`, README badges and install
+  instructions, `docker-compose.yml`, and `docker-registry/server.yaml`. Original authorship
+  and the MIT licence are retained.
+
+### Removed
+
+- `server.json` and `scripts/sync-server-json.mjs`. Both existed to keep the MCP **npm** registry
+  manifest in step with `package.json`; with no npm package there is nothing to keep in step.
+
+## [Unreleased]
+
 ### Added
 - **Whisparr support.** Set `WHISPARR_URL` and `WHISPARR_API_KEY` and Whisparr joins `arr_status`, the unified `search`/`fetch` tools, `arr_search_all`, and the shared configuration review tools, alongside seven Whisparr-specific tools (`whisparr_get_library`, `whisparr_search`, `whisparr_get_scenes`, `whisparr_get_queue`, `whisparr_get_calendar`, `whisparr_search_item`, `whisparr_refresh_item`).
 

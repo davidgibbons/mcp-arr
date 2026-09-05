@@ -1,5 +1,5 @@
 name: arr
-image: mcp/arr
+image: ghcr.io/davidgibbons/mcp-arr
 type: server
 meta:
   category: media
@@ -18,8 +18,8 @@ about:
   description: "MCP server for the *arr media management suite - Sonarr (TV), Radarr (Movies), Lidarr (Music), Prowlarr (Indexers), and Whisparr (Adult). Manage your media library, search for content, monitor downloads, and get AI-powered configuration recommendations using TRaSH Guides."
   icon: https://wiki.servarr.com/assets/servarr.png
 source:
-  project: https://github.com/aplaceforallmystuff/mcp-arr
-  commit: 41ea006ce123e1e52786c02500802b0839e2557b
+  project: https://github.com/davidgibbons/mcp-arr
+  commit: 50131f2b3cdb9f0ce4339dbaa6e4303479ce1926
 config:
   description: |
     Configure URLs and API keys for your *arr services. Only configure the services you use -

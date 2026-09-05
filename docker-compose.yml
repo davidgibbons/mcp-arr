@@ -11,7 +11,7 @@
 
 services:
   mcp-arr:
-    image: ghcr.io/aplaceforallmystuff/mcp-arr:latest
+    image: ghcr.io/davidgibbons/mcp-arr:latest
     container_name: mcp-arr
     restart: unless-stopped
     ports:
