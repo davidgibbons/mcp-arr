@@ -134,6 +134,11 @@ This repo is a fork of [aplaceforallmystuff/mcp-arr](https://github.com/aplacefo
 this fork carries the wider *arr stack. `main` here is the primary branch — do not
 assume upstream will take changes.
 
-Send **non-scope** fixes (bugs in shared code paths that affect upstream too) up as
-their own small PR against `upstream/main`, separate from any service-expansion work,
-so a scope decision doesn't take a real fix down with it.
+**Do not open PRs or issues against upstream.** Three are already pending there
+(#41 empty response bodies, #42 Whisparr, #43 duplicate Lidarr tools) and that is
+enough unsolicited work sitting in someone else's queue. Nothing further goes
+upstream unless the maintainer asks for it.
+
+Fixes to shared code paths still land here as their own commits, separate from
+service-expansion work, so that *if* upstream ever wants one it is easy to lift.
+Keep the `upstream` remote for pulling his fixes down.
