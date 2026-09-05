@@ -10,12 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-* **bazarr:** add Bazarr support for subtitle management ([d6dbbf6](https://github.com/davidgibbons/mcp-arr/commit/d6dbbf6221079dd7d8e14765d4d9e1619a1459e6))
 * **bazarr:** add Bazarr support for subtitle management ([d2c2427](https://github.com/davidgibbons/mcp-arr/commit/d2c2427d52e49e1adf016cf760bfa1dbf1ff5b39))
-* **chaptarr:** add Chaptarr support for audiobooks and eBooks ([55434b7](https://github.com/davidgibbons/mcp-arr/commit/55434b737f1ef046e9bf5b5c09fcac03a25eb367))
 * **chaptarr:** add Chaptarr support for audiobooks and eBooks ([bb127dc](https://github.com/davidgibbons/mcp-arr/commit/bb127dcbd69e2af27dfe1da593901f87b0a0fe2b))
 * expose remote path mappings for every configured service ([4aabda6](https://github.com/davidgibbons/mcp-arr/commit/4aabda65d15e2a5b4490e95177328b211f366c49))
-* **jellyseerr:** add Jellyseerr support for media requests ([9be9301](https://github.com/davidgibbons/mcp-arr/commit/9be9301c850998b6b713eb0eb8a6d7d7ee2a4d80))
 * **jellyseerr:** add Jellyseerr support for media requests ([cb4e6c2](https://github.com/davidgibbons/mcp-arr/commit/cb4e6c2e0e8cd30ea9946cfc7d7dfd7ca390d455))
 * **whisparr:** add client with runtime V2/V3 variant detection ([cbd5f0f](https://github.com/davidgibbons/mcp-arr/commit/cbd5f0f6cfc3635ed58da74432c1b6ad39b4ab36))
 * **whisparr:** add library, scene, queue and search tools ([823976a](https://github.com/davidgibbons/mcp-arr/commit/823976a0e6f94d4b76aed772852c995524d638fb))
