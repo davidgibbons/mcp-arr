@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Jellyseerr support** (media requests). Jellyseerr takes requests from users and hands approved ones to
+  Sonarr and Radarr, so like Prowlarr it has no quality profiles or root folders and is excluded from the
+  shared configuration tools. 9 tools behind `JELLYSEERR_URL` / `JELLYSEERR_API_KEY`.
+  - **Status is numeric, and the enums are wider than commonly documented.** Read from a running 3.3.0
+    build rather than from docs: `MediaRequestStatus` is 1-5 including `COMPLETED=5`, which is absent from
+    the usual four-value set and is the *most frequent* value on a real instance — treating it as unknown
+    would mislabel the majority of rows. `MediaStatus` runs 1-7 including `BLOCKLISTED` and `DELETED`.
+    Responses carry both the raw number and the decoded name.
+  - **Requests carry no title**, only a `tmdbId`. `jellyseerr_get_requests` takes `includeTitles`
+    (default true) which resolves them in parallel — one extra lookup per row, bounded by page size. A
+    failed title lookup returns undefined rather than failing the listing.
+  - `media.externalServiceId` is reported, so a request traces to the Sonarr/Radarr id fetching it.
+  - `jellyseerr_approve_request` is not a dry run: it starts a real download. Its description and response
+    say so.
+
 - **Chaptarr support** (audiobooks and eBooks). [Chaptarr](https://github.com/Chaptarr/chaptarr) is an
   actively developed Readarr fork — Readarr itself was archived by its maintainers on 2025-06-27 — and it
   holds both media types in one instance, so media type is part of identity rather than a filter: the same

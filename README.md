@@ -12,11 +12,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 
-MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, Prowlarr, Whisparr, and Chaptarr.
+MCP server for the [*arr media management suite](https://wiki.servarr.com/) - Sonarr, Radarr, Lidarr, Prowlarr, Whisparr, Chaptarr, and Jellyseerr.
 
 Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP mode for hosted MCP clients such as ChatGPT connectors.
 
-> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr and Chaptarr (books) today, more to come. Fixes that aren't scope-related are still sent upstream.
+> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr, Chaptarr (books) and Jellyseerr (requests) today, more to come. Fixes that aren't scope-related are still sent upstream.
 >
 > Distributed as a **container image only**; there is no npm package for this fork.
 
@@ -40,6 +40,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
 | **Prowlarr (Indexers)** | List indexers, search across all trackers, test health, view statistics |
 | **Whisparr (Adult)** | List library, search sites/scenes, trigger downloads, check queue, view calendar, review setup - works with both V2 and V3 (Eros) |
 | **Chaptarr (Books)** | List authors/books/series/editions, search, add authors, trigger downloads, check queue and missing, review setup - audiobooks and eBooks in one instance |
+| **Jellyseerr (Requests)** | Triage media requests: list by state, approve or decline, review issues, see who is asking for what |
 | **Cross-Service** | Status check, unified search across all configured services |
 | **Configuration** | Quality profiles, download clients, naming conventions, health checks, storage info |
 | **TRaSH Guides** | Reference quality profiles, custom formats, naming conventions, compare against recommendations |
@@ -54,6 +55,7 @@ Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP 
   - [Prowlarr](https://prowlarr.com/) for indexer management
   - [Whisparr](https://whisparr.com/) for adult media (V2 or V3 "Eros")
   - [Chaptarr](https://github.com/Chaptarr/chaptarr) for audiobooks and eBooks
+  - [Jellyseerr](https://github.com/fallenbagel/jellyseerr) for media requests
 
 ## Installation
 
@@ -180,7 +182,7 @@ Add to your Claude Desktop config file:
   "mcpServers": {
     "arr": {
       "command": "docker",
-      "args": ["run", "--rm", "-i", "-e", "SONARR_URL", "-e", "SONARR_API_KEY", "-e", "RADARR_URL", "-e", "RADARR_API_KEY", "-e", "LIDARR_URL", "-e", "LIDARR_API_KEY", "-e", "PROWLARR_URL", "-e", "PROWLARR_API_KEY", "-e", "WHISPARR_URL", "-e", "WHISPARR_API_KEY", "-e", "CHAPTARR_URL", "-e", "CHAPTARR_API_KEY", "ghcr.io/davidgibbons/mcp-arr:latest"],
+      "args": ["run", "--rm", "-i", "-e", "SONARR_URL", "-e", "SONARR_API_KEY", "-e", "RADARR_URL", "-e", "RADARR_API_KEY", "-e", "LIDARR_URL", "-e", "LIDARR_API_KEY", "-e", "PROWLARR_URL", "-e", "PROWLARR_API_KEY", "-e", "WHISPARR_URL", "-e", "WHISPARR_API_KEY", "-e", "CHAPTARR_URL", "-e", "CHAPTARR_API_KEY", "-e", "JELLYSEERR_URL", "-e", "JELLYSEERR_API_KEY", "ghcr.io/davidgibbons/mcp-arr:latest"],
       "env": {
         "SONARR_URL": "http://host.docker.internal:8989",
         "SONARR_API_KEY": "your-sonarr-api-key",
@@ -193,7 +195,9 @@ Add to your Claude Desktop config file:
         "WHISPARR_URL": "http://host.docker.internal:6969",
         "WHISPARR_API_KEY": "your-whisparr-api-key",
         "CHAPTARR_URL": "http://host.docker.internal:8789",
-        "CHAPTARR_API_KEY": "your-chaptarr-api-key"
+        "CHAPTARR_API_KEY": "your-chaptarr-api-key",
+        "JELLYSEERR_URL": "http://host.docker.internal:5055",
+        "JELLYSEERR_API_KEY": "your-jellyseerr-api-key"
       }
     }
   }
@@ -410,6 +414,36 @@ Chaptarr's own [identity contract](https://github.com/Chaptarr/chaptarr/blob/dev
 Every Chaptarr tool reports both: `id` alongside `foreignAuthorId` / `foreignBookId` / `foreignSeriesId`, with books also carrying their discrete `providerIds` (Hardcover, Goodreads, ASIN, Audible). Anything held across turns or cached should key on the provider id, not `id`.
 
 > **Chaptarr is beta** (0.9.x) and its published contract doc runs ahead of the shipped build - the doc describes `providerId`/`providerIdsAll` fields on books that 0.9.958 does not emit. These tools follow what the build actually returns.
+
+### Jellyseerr Tools (Requests)
+
+[Jellyseerr](https://github.com/fallenbagel/jellyseerr) takes media requests from users and hands approved ones to Sonarr and Radarr. It has no quality profiles or root folders of its own, so it is excluded from the shared configuration tools like Prowlarr.
+
+| Tool | Description |
+|------|-------------|
+| `jellyseerr_get_summary` | Request counts by state plus open issues. **Start here.** |
+| `jellyseerr_get_requests` | Requests newest first, filterable by state |
+| `jellyseerr_get_request` | One request with its decoded status and requester |
+| `jellyseerr_approve_request` | Approve a request — **starts a real download** |
+| `jellyseerr_decline_request` | Decline a request |
+| `jellyseerr_get_issues` | Issues users reported against media |
+| `jellyseerr_search` | Search for movies/TV, returning tmdbIds |
+| `jellyseerr_get_users` | Users with request counts and quotas |
+| `jellyseerr_review_setup` | Version, counts, issues and user count in one call |
+
+#### Status is numeric, and wider than the docs suggest
+
+Jellyseerr sends status as an integer. Read from a running 3.3.0 build, `MediaRequestStatus` is `PENDING=1, APPROVED=2, DECLINED=3, FAILED=4, COMPLETED=5` — **`COMPLETED=5` is absent from the commonly-cited four-value set and is the most frequent value on a real instance**, so treating 5 as unknown would mislabel the majority of rows. `MediaStatus` runs 1–7 including `BLOCKLISTED` and `DELETED`.
+
+Every response reports both the raw number and the decoded name, so a reader does not have to memorise the enum and the number can still be matched against the API.
+
+#### Requests carry no title
+
+A request row holds only a `tmdbId` — there is no title anywhere in the payload. `jellyseerr_get_requests` therefore takes `includeTitles` (default `true`), which resolves each row's title in parallel. That is one extra request per row, bounded by the page size; set it to `false` for a fast id-only listing.
+
+#### Approving starts a download
+
+`jellyseerr_approve_request` is not a dry run: it hands the request to Sonarr or Radarr, which begins fetching. Declining only closes the request and removes nothing.
 
 ### Configuration Review Tools
 
