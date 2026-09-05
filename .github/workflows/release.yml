@@ -126,7 +126,11 @@ jobs:
           fi
 
           # On manual dispatch, create + push the tag if missing; if it exists it must point at HEAD.
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          #
+          # Skipped when an explicit tag was supplied: that means "rebuild this
+          # existing release", not "cut a new one". main will normally have
+          # moved past such a tag, and the HEAD check would reject it.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -z "${INPUT_TAG:-}" ]; then
             if git rev-parse "$TAG" >/dev/null 2>&1; then
               if [ "$(git rev-parse "$TAG")" != "$(git rev-parse HEAD)" ]; then
                 echo "::error::Tag $TAG already exists and does not point at HEAD. Aborting."
