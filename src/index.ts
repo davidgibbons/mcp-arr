@@ -79,6 +79,27 @@ const HTTP_HOST = process.env.HOST || "127.0.0.1";
 const HTTP_PORT = Number(process.env.PORT || "3000");
 const HTTP_PATH = process.env.MCP_PATH || "/mcp";
 
+// Access mode gates the mutating tools (see MUTATING_TOOLS below). Defaults to
+// read-write, so this changes nothing for an existing deployment.
+type AccessMode = "read-write" | "read-only";
+
+function parseAccessMode(raw: string | undefined): AccessMode {
+  // Env vars are commonly written with underscores, so accept read_only too
+  // rather than exiting over a separator.
+  const value = (raw || "read-write").toLowerCase().replace(/_/g, "-");
+  if (value === "read-write" || value === "read-only") {
+    return value;
+  }
+  // Fail loudly. Falling back to read-write because a value was misspelled
+  // would hand out the mutating tools to someone who asked for a reader.
+  console.error(
+    `Invalid MCP_ARR_ACCESS "${raw}" - expected "read-write" or "read-only".`,
+  );
+  process.exit(1);
+}
+
+const ACCESS_MODE: AccessMode = parseAccessMode(process.env.MCP_ARR_ACCESS);
+
 // Configuration from environment
 interface ServiceConfig {
   name: ArrService;
@@ -1847,6 +1868,24 @@ for (const tool of TOOLS) {
   };
 }
 
+// The tools an access level may see. Read-only drops every mutating tool,
+// which leaves all 107 reads plus the TRaSH reference tools — those touch
+// nothing, so they stay available in both modes.
+function toolsFor(access: AccessMode): Tool[] {
+  return access === "read-only"
+    ? TOOLS.filter((tool) => !MUTATING_TOOLS.has(tool.name))
+    : TOOLS;
+}
+
+// Whether an access level may invoke a tool. This is the control; filtering the
+// catalogue above is only a convenience. tools/call dispatches on the name the
+// client sends, so a client that already knows a name — hardcoded, cached from
+// an earlier session, or guessed — reaches the handler without ever having read
+// the list. Gating one without the other is security theatre.
+function isToolAllowed(access: AccessMode, name: string): boolean {
+  return access === "read-write" || !MUTATING_TOOLS.has(name);
+}
+
 // Build a fresh MCP server instance with all request handlers registered.
 // The HTTP transport builds a new instance per request (see startHttpServer)
 // so concurrent / long-lived transports never share a single server. A shared
@@ -1854,7 +1893,7 @@ for (const tool of TOOLS) {
 // old code funnelled every request through a serialized queue — and that queue
 // deadlocked the moment a streamable client opened its long-lived GET (SSE)
 // stream, since that request never completes.
-function buildServer(): Server {
+function buildServer(access: AccessMode = ACCESS_MODE): Server {
   const server = new Server(
     {
       name: "mcp-arr",
@@ -1866,7 +1905,7 @@ function buildServer(): Server {
       },
     }
   );
-  registerHandlers(server);
+  registerHandlers(server, access);
   return server;
 }
 
@@ -2259,15 +2298,25 @@ async function getPaginatedQueue(
 // Registers the MCP request handlers on a server instance. Called by
 // buildServer() for every server created (one per HTTP request, plus the
 // module-level stdio instance).
-function registerHandlers(server: Server): void {
+function registerHandlers(server: Server, access: AccessMode): void {
 // Handle list tools request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools: TOOLS };
+  return { tools: toolsFor(access) };
 });
 
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+
+  if (!isToolAllowed(access, name)) {
+    return {
+      content: [{
+        type: "text",
+        text: `Error: ${name} changes state and this server is running in read-only mode (MCP_ARR_ACCESS=read-only).`,
+      }],
+      isError: true,
+    };
+  }
 
   try {
     switch (name) {
@@ -4500,6 +4549,8 @@ async function startHttpServer() {
         status: "ok",
         version: SERVER_VERSION,
         transport: "http",
+        access: ACCESS_MODE,
+        toolCount: toolsFor(ACCESS_MODE).length,
         // Kept for compatibility: which services were configured at all.
         configuredServices: configuredServices.map((service) => service.name),
         // Whether those configurations actually work.
@@ -4548,7 +4599,10 @@ async function startHttpServer() {
     httpServer.listen(HTTP_PORT, HTTP_HOST, () => resolve());
   });
 
-  console.error(`*arr MCP server running over HTTP at http://${HTTP_HOST}:${HTTP_PORT}${HTTP_PATH}`);
+  console.error(
+    `*arr MCP server running over HTTP at http://${HTTP_HOST}:${HTTP_PORT}${HTTP_PATH}` +
+    ` - access: ${ACCESS_MODE} (${toolsFor(ACCESS_MODE).length} tools)`,
+  );
 }
 
 // Start the server
@@ -4560,7 +4614,7 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`*arr MCP server running over stdio - configured services: ${configuredServices.map(s => s.name).join(', ') || 'none (TRaSH-only mode)'}`);
+  console.error(`*arr MCP server running over stdio - access: ${ACCESS_MODE} - configured services: ${configuredServices.map(s => s.name).join(', ') || 'none (TRaSH-only mode)'}`);
 }
 
 main().catch((error) => {

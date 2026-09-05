@@ -92,6 +92,7 @@ Environment variables for remote mode:
 - `PORT` to override the port (default `3000`)
 - `MCP_PATH` to override the MCP endpoint path (default `/mcp`)
 - `MCP_ARR_HEALTH_INTERVAL` seconds between credential health probes (default `60`; `0` disables them)
+- `MCP_ARR_ACCESS` set to `read-only` to drop the 24 mutating tools (default `read-write`; see [Access Mode](#access-mode))
 
 ### Health Endpoint
 
@@ -103,6 +104,8 @@ whether they were supplied:
   "status": "ok",
   "version": "1.8.0",
   "transport": "http",
+  "access": "read-write",
+  "toolCount": 131,
   "configuredServices": ["sonarr", "radarr"],
   "credentialsOk": false,
   "services": {
@@ -136,6 +139,35 @@ checked is not the same as broken.
 liveness probes, and failing it because someone else's Sonarr is down would
 restart this server for an outage it cannot fix. Alert on `credentialsOk`
 instead.
+
+### Access Mode
+
+`MCP_ARR_ACCESS` controls whether the mutating tools are available at all:
+
+| Value | Behaviour |
+|---|---|
+| `read-write` (default) | All 131 tools. Unchanged from previous versions. |
+| `read-only` | The 24 mutating tools are neither advertised nor callable. |
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e MCP_TRANSPORT=http -e HOST=0.0.0.0 \
+  -e MCP_ARR_ACCESS=read-only \
+  -e SONARR_URL=http://host.docker.internal:8989 \
+  -e SONARR_API_KEY=your-sonarr-api-key \
+  ghcr.io/davidgibbons/mcp-arr:latest
+```
+
+Use it for anything you would not trust to start a download or delete a queue
+item — an assistant answering "why is this import stuck", a shared connector, or
+an agent you are still learning to trust. Reads are untouched, including the
+TRaSH Guides reference tools.
+
+The mode is enforced on **both** `tools/list` and `tools/call`, so a client that
+already knows a tool name — hardcoded, or remembered from an earlier session —
+still cannot invoke it. `GET /health` reports the active mode and the resulting
+tool count, and an invalid value exits at startup rather than quietly falling
+back to read-write.
 
 ### Docker
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { EVERY_SERVICE, listToolObjects } from "./helpers/list-tools.mjs";
+import { EVERY_SERVICE, listToolObjects } from "./helpers/mcp-client.mjs";
 
 // The mutation classification in src/index.ts is the single source of truth for
 // both the MCP annotations and the read-only access gate that will consume them.

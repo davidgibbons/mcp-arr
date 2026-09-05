@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 
-// Drives a real server over stdio and returns what it advertises from
-// tools/list. Shared by the catalogue and annotation tests so both exercise the
-// same path a client takes, rather than reaching into the module internals.
-export async function listToolObjects(env) {
+// Drives a real server over stdio. Both the catalogue and access-mode tests go
+// through this rather than reaching into module internals, so they exercise the
+// same path a client takes.
+async function withServer(env, fn) {
   const child = spawn(process.execPath, ["dist/index.js"], {
     cwd: new URL("../..", import.meta.url),
     env: { ...process.env, ...env },
@@ -46,15 +46,25 @@ export async function listToolObjects(env) {
       clientInfo: { name: "test", version: "0" },
     });
     child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
-    const listed = await send("tools/list", {});
-    return listed.result.tools;
+    return await fn(send);
   } finally {
     child.kill();
   }
 }
 
+export async function listToolObjects(env) {
+  return withServer(env, async (send) => (await send("tools/list", {})).result.tools);
+}
+
 export async function listTools(env) {
   return (await listToolObjects(env)).map((t) => t.name);
+}
+
+// Invokes a tool by name without listing first — deliberately, since that is how
+// a client with a hardcoded or remembered name reaches the server, and the case
+// the read-only gate has to survive.
+export async function callTool(env, name, args = {}) {
+  return withServer(env, async (send) => (await send("tools/call", { name, arguments: args })).result);
 }
 
 // No network happens here: listing tools only reads configuration.
