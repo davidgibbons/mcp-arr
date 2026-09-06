@@ -24,8 +24,9 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createServer, IncomingMessage } from "node:http";
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { readFileSync } from "node:fs";
 import {
   SonarrClient,
@@ -101,20 +102,93 @@ function parseAccessMode(raw: string | undefined): AccessMode {
 
 const ACCESS_MODE: AccessMode = parseAccessMode(process.env.MCP_ARR_ACCESS);
 
-// --- Bearer token authentication ---------------------------------------------
+// --- Authentication ----------------------------------------------------------
 //
 // The HTTP transport has no authentication of its own unless one is configured
 // here. That default is unchanged - existing deployments keep working - but a
 // server holding eight *arr API keys should be able to defend itself rather than
 // relying on the operator to put a proxy in front of it.
 //
-// Two tokens, so a reader and a writer can be told apart without running two
-// servers: MCP_ARR_AUTH_TOKEN gets whatever MCP_ARR_ACCESS allows, and
-// MCP_ARR_AUTH_TOKEN_READONLY is always read-only no matter what.
+// Three modes:
+//
+//   none   the endpoint is open (the historical behaviour)
+//   token  a static bearer token, optionally a second read-only one
+//   oauth  OAuth 2.1 resource server: validate JWTs, read access off scopes
+//
+// `token` is not the legacy path. Some MCP clients can only send a fixed header
+// and cannot refresh anything, so a deployment that accepts only short-lived
+// OAuth tokens locks them out entirely. Both modes stay first-class.
+
+type AuthMode = "none" | "token" | "oauth";
 
 const AUTH_TOKEN = process.env.MCP_ARR_AUTH_TOKEN || "";
 const AUTH_TOKEN_READONLY = process.env.MCP_ARR_AUTH_TOKEN_READONLY || "";
-const AUTH_REQUIRED = Boolean(AUTH_TOKEN || AUTH_TOKEN_READONLY);
+
+const OAUTH_ISSUER = (process.env.MCP_ARR_OAUTH_ISSUER || "").replace(/\/$/, "");
+const OAUTH_AUDIENCE = process.env.MCP_ARR_OAUTH_AUDIENCE || "";
+const OAUTH_JWKS_URI = process.env.MCP_ARR_OAUTH_JWKS_URI || "";
+const OAUTH_SCOPE_READ = process.env.MCP_ARR_OAUTH_SCOPE_READ || "mcp-arr:read";
+const OAUTH_SCOPE_WRITE = process.env.MCP_ARR_OAUTH_SCOPE_WRITE || "mcp-arr:write";
+const OAUTH_RESOURCE = process.env.MCP_ARR_OAUTH_RESOURCE || "";
+
+const WELL_KNOWN_PROTECTED_RESOURCE = "/.well-known/oauth-protected-resource";
+
+function configFail(message: string): never {
+  console.error(`[mcp-arr] ${message}`);
+  process.exit(1);
+}
+
+/**
+ * Decide which mode is in force, and refuse to start on a half-configured one.
+ *
+ * The failure this guards against is a misspelled variable leaving the endpoint
+ * quietly open: someone sets MCP_ARR_OAUTH_ISSUUER, nothing matches, and the
+ * server comes up unauthenticated without complaint. So a setting that only
+ * makes sense in one mode drags that mode in, and an incomplete mode is fatal
+ * rather than ignored.
+ */
+function resolveAuthMode(): AuthMode {
+  const tokenConfigured = Boolean(AUTH_TOKEN || AUTH_TOKEN_READONLY);
+  const oauthConfigured = Boolean(OAUTH_ISSUER || OAUTH_AUDIENCE || OAUTH_JWKS_URI);
+  const raw = (process.env.MCP_ARR_AUTH_MODE || "").trim().toLowerCase();
+
+  let mode: AuthMode;
+  if (!raw) {
+    if (tokenConfigured && oauthConfigured) {
+      configFail(
+        "Both bearer-token and OAuth settings are present - which did you mean? " +
+        'Set MCP_ARR_AUTH_MODE to "token" or "oauth".',
+      );
+    }
+    mode = oauthConfigured ? "oauth" : tokenConfigured ? "token" : "none";
+  } else if (raw === "none" || raw === "token" || raw === "oauth") {
+    mode = raw;
+  } else {
+    configFail(
+      `Invalid MCP_ARR_AUTH_MODE "${process.env.MCP_ARR_AUTH_MODE}" - expected "none", "token" or "oauth".`,
+    );
+  }
+
+  if (mode === "token" && !tokenConfigured) {
+    configFail("MCP_ARR_AUTH_MODE=token needs MCP_ARR_AUTH_TOKEN or MCP_ARR_AUTH_TOKEN_READONLY.");
+  }
+  if (mode === "oauth") {
+    if (!OAUTH_ISSUER) configFail("OAuth mode needs MCP_ARR_OAUTH_ISSUER (the expected `iss`).");
+    // Not optional: without it, every token the issuer ever minted for any of
+    // its clients would be accepted here.
+    if (!OAUTH_AUDIENCE) configFail("OAuth mode needs MCP_ARR_OAUTH_AUDIENCE (the expected `aud`).");
+  }
+  if (mode === "none" && (tokenConfigured || oauthConfigured)) {
+    console.error(
+      "[mcp-arr] WARNING: MCP_ARR_AUTH_MODE=none, so the auth settings that are configured " +
+      "are being ignored and the endpoint is open to anyone who can reach it.",
+    );
+  }
+  return mode;
+}
+
+const AUTH_MODE: AuthMode = resolveAuthMode();
+const AUTH_REQUIRED = AUTH_MODE !== "none";
 
 /**
  * Constant-time comparison of two secrets.
@@ -131,33 +205,200 @@ function secretsMatch(a: string, b: string): boolean {
   return timingSafeEqual(digestA, digestB);
 }
 
-type AuthOutcome =
-  | { authenticated: true; access: AccessMode }
-  | { authenticated: false };
+let jwksPromise: Promise<ReturnType<typeof createRemoteJWKSet>> | undefined;
+
+/** Where the issuer says its signing keys live, unless we were told directly. */
+async function discoverJwksUri(): Promise<string> {
+  if (OAUTH_JWKS_URI) return OAUTH_JWKS_URI;
+  const url = `${OAUTH_ISSUER}/.well-known/openid-configuration`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`OIDC discovery at ${url} returned ${response.status}`);
+  }
+  const metadata = (await response.json()) as { jwks_uri?: string };
+  if (!metadata.jwks_uri) {
+    throw new Error(`OIDC discovery at ${url} advertises no jwks_uri; set MCP_ARR_OAUTH_JWKS_URI.`);
+  }
+  return metadata.jwks_uri;
+}
+
+/**
+ * The JWKS, resolved once and reused.
+ *
+ * createRemoteJWKSet owns the key cache, its TTL, and the refetch that happens
+ * when a token arrives bearing a `kid` it has not seen - which is what lets the
+ * issuer rotate keys without every request failing until a restart. Building a
+ * new set per request would throw all of that away and hammer the IdP besides.
+ *
+ * Resolved lazily rather than at startup, so the server still comes up when the
+ * IdP is slower to start than it is. A failure is deliberately not cached: "the
+ * IdP was not up yet" must not become permanent.
+ */
+function getJwks(): Promise<ReturnType<typeof createRemoteJWKSet>> {
+  if (!jwksPromise) {
+    const pending = discoverJwksUri().then((uri) => createRemoteJWKSet(new URL(uri)));
+    pending.catch(() => {
+      if (jwksPromise === pending) jwksPromise = undefined;
+    });
+    jwksPromise = pending;
+  }
+  return jwksPromise;
+}
+
+/** Scopes, from `scope` (RFC 9068) or `scp` (Entra) - string or array either way. */
+function scopesOf(payload: JWTPayload): Set<string> {
+  const raw = payload.scope ?? payload.scp;
+  const list = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/\s+/) : [];
+  return new Set(list.map(String).filter(Boolean));
+}
+
+interface AuthFailure {
+  ok: false;
+  status: number;
+  /** RFC 6750 error code; omitted when no credential was offered at all. */
+  error?: string;
+  scope?: string;
+  message: string;
+}
+
+type AuthOutcome = { ok: true; access: AccessMode } | AuthFailure;
 
 /**
  * Resolve what a request is allowed to do.
  *
- * The read-only token is deliberately capped rather than merely defaulted: if
- * the server as a whole is running read-only, the full token cannot escalate
- * past it. MCP_ARR_ACCESS is a ceiling, not a starting point.
+ * MCP_ARR_ACCESS is a ceiling, not a starting point: on a read-only server
+ * neither the full token nor a write scope escalates past it. A credential can
+ * only ever narrow what the server itself allows.
  */
-function authenticate(req: IncomingMessage): AuthOutcome {
-  if (!AUTH_REQUIRED) return { authenticated: true, access: ACCESS_MODE };
+async function authenticate(req: IncomingMessage): Promise<AuthOutcome> {
+  if (AUTH_MODE === "none") return { ok: true, access: ACCESS_MODE };
 
-  const header = req.headers.authorization || "";
-  const match = /^Bearer (.+)$/i.exec(header.trim());
-  if (!match) return { authenticated: false };
+  const match = /^Bearer (.+)$/i.exec((req.headers.authorization || "").trim());
+  if (!match) {
+    return { ok: false, status: 401, message: "A bearer token is required." };
+  }
   const presented = match[1].trim();
 
-  // Both comparisons always run, so a request cannot learn which token it was
-  // closer to from how long the answer took.
-  const isFull = secretsMatch(presented, AUTH_TOKEN);
-  const isReadOnly = secretsMatch(presented, AUTH_TOKEN_READONLY);
+  if (AUTH_MODE === "token") {
+    // Both comparisons always run, so a request cannot learn which token it was
+    // closer to from how long the answer took.
+    const isFull = secretsMatch(presented, AUTH_TOKEN);
+    const isReadOnly = secretsMatch(presented, AUTH_TOKEN_READONLY);
+    if (isFull) return { ok: true, access: ACCESS_MODE };
+    if (isReadOnly) return { ok: true, access: "read-only" };
+    return { ok: false, status: 401, error: "invalid_token", message: "The bearer token was not recognised." };
+  }
 
-  if (isFull) return { authenticated: true, access: ACCESS_MODE };
-  if (isReadOnly) return { authenticated: true, access: "read-only" };
-  return { authenticated: false };
+  let keys: ReturnType<typeof createRemoteJWKSet>;
+  try {
+    keys = await getJwks();
+  } catch (error) {
+    // The presented token may well be fine; we simply cannot check it. A 401
+    // here would send whoever is debugging after their own credential instead.
+    return {
+      ok: false,
+      status: 503,
+      error: "temporarily_unavailable",
+      message: `Could not reach the issuer's signing keys: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  let payload: JWTPayload;
+  try {
+    ({ payload } = await jwtVerify(presented, keys, {
+      issuer: OAUTH_ISSUER,
+      audience: OAUTH_AUDIENCE,
+      // `exp` is only checked when present, so a token minted without one would
+      // otherwise be a credential that never expires - exactly what OAuth mode
+      // is meant to be better than. RFC 9068 requires it on access tokens.
+      requiredClaims: ["exp"],
+    }));
+  } catch (error) {
+    return {
+      ok: false,
+      status: 401,
+      error: "invalid_token",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const scopes = scopesOf(payload);
+  if (scopes.has(OAUTH_SCOPE_WRITE)) return { ok: true, access: ACCESS_MODE };
+  if (scopes.has(OAUTH_SCOPE_READ)) return { ok: true, access: "read-only" };
+  // Deliberately not a silent downgrade to read-only: a token that was granted
+  // nothing here should be told so, not quietly handed the library to read.
+  return {
+    ok: false,
+    status: 403,
+    error: "insufficient_scope",
+    scope: `${OAUTH_SCOPE_READ} ${OAUTH_SCOPE_WRITE}`,
+    message: `The token carries neither ${OAUTH_SCOPE_READ} nor ${OAUTH_SCOPE_WRITE}.`,
+  };
+}
+
+/**
+ * The request's Host, or the configured one if the client sent something the URL
+ * parser will not take.
+ *
+ * `Host` is attacker-controlled, and Node's HTTP parser forwards bytes that are
+ * legal in a header but forbidden in a URL host - a space, `|`, `^`, `[`. Those
+ * make `new URL()` throw, and a throw inside the async request handler becomes an
+ * unhandled rejection, which on Node's default behaviour ends the process. That
+ * is a one-request, unauthenticated denial of service, so every use of the header
+ * goes through here.
+ */
+function safeHost(req: IncomingMessage): string {
+  const fallback = `${HTTP_HOST}:${HTTP_PORT}`;
+  if (!req.headers.host) return fallback;
+  let host: string;
+  try {
+    host = new URL(`http://${req.headers.host}`).host;
+  } catch {
+    return fallback;
+  }
+  // Parsing alone is not enough: `a"b` comes back unchanged, and that quote would
+  // close the quoted resource_metadata parameter in the WWW-Authenticate header.
+  // Only genuine host characters get out of here.
+  return /^([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:\d+)?$/.test(host) ? host : fallback;
+}
+
+/**
+ * The canonical URI of this MCP endpoint - what a client asks its authorization
+ * server for, and therefore what has to match MCP_ARR_OAUTH_AUDIENCE.
+ *
+ * Derived from the request unless pinned, because behind a proxy the public name
+ * is in the Host header, not in HOST/PORT. A document advertising
+ * `http://0.0.0.0:3000/mcp` is worse than none: the client would dutifully go
+ * and request an audience that nobody accepts.
+ */
+function resourceUri(req: IncomingMessage): string {
+  if (OAUTH_RESOURCE) return OAUTH_RESOURCE;
+  const forwarded = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const scheme = /^https?$/.test(forwarded) ? forwarded : "http";
+  return `${scheme}://${safeHost(req)}${HTTP_PATH}`;
+}
+
+/** RFC 9728 §3.1: the resource's own path is inserted after the well-known segment. */
+function resourceMetadataUrl(req: IncomingMessage): string {
+  const resource = new URL(resourceUri(req));
+  const path = resource.pathname === "/" ? "" : resource.pathname;
+  return `${resource.origin}${WELL_KNOWN_PROTECTED_RESOURCE}${path}`;
+}
+
+function wwwAuthenticate(req: IncomingMessage, failure: AuthFailure): string {
+  const params = ['realm="mcp-arr"'];
+  if (failure.error) params.push(`error="${failure.error}"`);
+  // The scopes the *resource* requires, not the ones the token was granted. The
+  // MCP spec asks for these on the 401 as well as the 403, so a client can ask
+  // for the right thing on its first authorization round-trip instead of coming
+  // back for a second one.
+  const required = failure.scope ?? (AUTH_MODE === "oauth" ? `${OAUTH_SCOPE_READ} ${OAUTH_SCOPE_WRITE}` : undefined);
+  if (required) params.push(`scope="${required}"`);
+  // The part that turns "supports OAuth" into "works without hand-wiring": it
+  // tells the client where to discover the authorization server. Without it the
+  // client just sees an opaque 401 and the user wires everything by hand.
+  if (AUTH_MODE === "oauth") params.push(`resource_metadata="${resourceMetadataUrl(req)}"`);
+  return `Bearer ${params.join(", ")}`;
 }
 
 // Configuration from environment
@@ -4600,13 +4841,30 @@ async function startHttpServer() {
   startHealthProbe();
 
   const httpServer = createServer(async (req, res) => {
+    // http.Server never awaits this callback, so anything that throws out of it
+    // is an unhandled rejection - which by default takes the process down. One
+    // malformed request must not be able to end the server.
+    try {
+      await handleHttpRequest(req, res);
+    } catch (error) {
+      console.error("[mcp-arr] request handler failed:", error);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end("Internal error");
+      } else {
+        res.destroy();
+      }
+    }
+  });
+
+  async function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     if (!req.url) {
       res.statusCode = 400;
       res.end("Missing URL");
       return;
     }
 
-    const requestUrl = new URL(req.url, `http://${req.headers.host || `${HTTP_HOST}:${HTTP_PORT}`}`);
+    const requestUrl = new URL(req.url, `http://${safeHost(req)}`);
 
     if (requestUrl.pathname === "/health" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -4615,6 +4873,7 @@ async function startHttpServer() {
         version: SERVER_VERSION,
         transport: "http",
         access: ACCESS_MODE,
+        authMode: AUTH_MODE,
         authRequired: AUTH_REQUIRED,
         toolCount: toolsFor(ACCESS_MODE).length,
         // Kept for compatibility: which services were configured at all.
@@ -4626,24 +4885,46 @@ async function startHttpServer() {
       return;
     }
 
+    // RFC 9728. Unauthenticated by necessity - this is what a client reads to
+    // find out how to authenticate in the first place. Both the path-inserted
+    // form the RFC specifies and the bare root, because clients try both.
+    const wellKnownPaths = [
+      WELL_KNOWN_PROTECTED_RESOURCE,
+      `${WELL_KNOWN_PROTECTED_RESOURCE}${HTTP_PATH}`,
+    ];
+    if (wellKnownPaths.includes(requestUrl.pathname)) {
+      if (AUTH_MODE !== "oauth") {
+        // Nothing to advertise: there is no authorization server.
+        res.statusCode = 404;
+        res.end("Not found");
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        resource: resourceUri(req),
+        authorization_servers: [OAUTH_ISSUER],
+        scopes_supported: [OAUTH_SCOPE_READ, OAUTH_SCOPE_WRITE],
+        bearer_methods_supported: ["header"],
+        resource_documentation: "https://github.com/davidgibbons/mcp-arr#authentication",
+      }));
+      return;
+    }
+
     if (requestUrl.pathname !== HTTP_PATH) {
       res.statusCode = 404;
       res.end("Not found");
       return;
     }
 
-    const auth = authenticate(req);
-    if (!auth.authenticated) {
+    const auth = await authenticate(req);
+    if (!auth.ok) {
       // Refuse before building a server: there is no reason to construct one
       // for a request that is not allowed to speak to it.
-      res.writeHead(401, {
+      res.writeHead(auth.status, {
         "Content-Type": "application/json",
-        "WWW-Authenticate": 'Bearer realm="mcp-arr"',
+        "WWW-Authenticate": wwwAuthenticate(req, auth),
       });
-      res.end(JSON.stringify({
-        error: "unauthorized",
-        message: "A valid bearer token is required. Set Authorization: Bearer <token>.",
-      }));
+      res.end(JSON.stringify({ error: auth.error ?? "unauthorized", message: auth.message }));
       return;
     }
 
@@ -4673,7 +4954,7 @@ async function startHttpServer() {
         res.end(error instanceof Error ? error.message : String(error));
       }
     }
-  });
+  }
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
@@ -4683,14 +4964,24 @@ async function startHttpServer() {
   console.error(
     `*arr MCP server running over HTTP at http://${HTTP_HOST}:${HTTP_PORT}${HTTP_PATH}` +
     ` - access: ${ACCESS_MODE} (${toolsFor(ACCESS_MODE).length} tools)` +
-    ` - auth: ${AUTH_REQUIRED ? "bearer token" : "NONE"}`,
+    ` - auth: ${AUTH_MODE === "none" ? "NONE" : AUTH_MODE}`,
   );
+  if (AUTH_MODE === "oauth") {
+    // Say what it will actually check, so a mismatch shows up in the log rather
+    // than as a wall of identical 401s.
+    console.error(
+      `[mcp-arr] OAuth resource server: iss=${OAUTH_ISSUER} aud=${OAUTH_AUDIENCE} ` +
+      `scopes=${OAUTH_SCOPE_READ}/${OAUTH_SCOPE_WRITE}` +
+      `${OAUTH_JWKS_URI ? ` jwks=${OAUTH_JWKS_URI}` : " jwks=via OIDC discovery"}`,
+    );
+  }
   if (!AUTH_REQUIRED) {
     // A silent insecure default is how this bites people. Say it out loud.
     console.error(
       "[mcp-arr] WARNING: the HTTP endpoint is unauthenticated. Anyone who can reach " +
       `http://${HTTP_HOST}:${HTTP_PORT}${HTTP_PATH} can use every configured *arr API key. ` +
-      "Set MCP_ARR_AUTH_TOKEN, or keep this on a trusted network behind an authenticating proxy.",
+      "Set MCP_ARR_AUTH_MODE=token or =oauth, or keep this on a trusted network behind " +
+      "an authenticating proxy.",
     );
   }
 }
