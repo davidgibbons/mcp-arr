@@ -7,6 +7,10 @@
 # do NOT expose port 3000 directly to the public internet. To restrict host access
 # to localhost only, change the port mapping to "127.0.0.1:3000:3000".
 #
+# To limit the blast radius of whoever can reach it, set MCP_ARR_ACCESS=read-only
+# below: the 24 tools that add media, trigger downloads, delete queue items or
+# approve requests are then neither advertised nor callable.
+#
 # Supply your *arr URLs and API keys via a .env file next to this compose file.
 
 services:
@@ -22,6 +26,8 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       MCP_PATH: /mcp
+      # Set to read-only to drop the 24 mutating tools.
+      MCP_ARR_ACCESS: ${MCP_ARR_ACCESS:-read-write}
       # Sonarr
       SONARR_URL: ${SONARR_URL:-}
       SONARR_API_KEY: ${SONARR_API_KEY:-}

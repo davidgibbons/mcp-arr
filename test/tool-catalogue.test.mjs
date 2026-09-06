@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ALL_SERVICES, listTools } from "./helpers/list-tools.mjs";
+import { ALL_SERVICES, listTools } from "./helpers/mcp-client.mjs";
 
 // MCP tool names are the identity a client dispatches on, so the catalogue must
 // not advertise the same name twice. lidarr_get_quality_profiles and
