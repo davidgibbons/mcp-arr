@@ -1,6 +1,6 @@
 {
   "name": "mcp-arr",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "MCP server for the *arr media management suite - Sonarr, Radarr, Lidarr, Prowlarr, Whisparr. Fork of aplaceforallmystuff/mcp-arr with wider *arr coverage.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
