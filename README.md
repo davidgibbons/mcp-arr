@@ -1,6 +1,20 @@
 # MCP *arr Server
 
-![Architecture](docs/mcp-arr-architecture-diagram.png)
+```mermaid
+flowchart LR
+    C["MCP client<br/>(Claude, ChatGPT, Codex…)"]
+    S["<b>mcp-arr</b><br/>131 tools · stdio or HTTP"]
+    C <--> S
+    S --> SO["Sonarr — TV"]
+    S --> RA["Radarr — Movies"]
+    S --> LI["Lidarr — Music"]
+    S --> PR["Prowlarr — Indexers"]
+    S --> WH["Whisparr — Adult (V2 / V3 Eros)"]
+    S --> CH["Chaptarr — Books"]
+    S --> JE["Jellyseerr — Requests"]
+    S --> BA["Bazarr — Subtitles"]
+    S --> TG["TRaSH Guides — reference data"]
+```
 
 <!-- <p align="center">
   <img src="docs/mcp-arr-logo.png" alt="MCP *arr Server" width="400">
@@ -16,7 +30,7 @@ MCP server for the [*arr media management suite](https://wiki.servarr.com/) - So
 
 Supports both local `stdio` mode for Claude/Codex-style clients and remote HTTP mode for hosted MCP clients such as ChatGPT connectors.
 
-> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr, Chaptarr (books), Jellyseerr (requests) and Bazarr (subtitles) today, more to come. Fixes that aren't scope-related are still sent upstream.
+> **This is a fork.** It continues from [aplaceforallmystuff/mcp-arr](https://github.com/aplaceforallmystuff/mcp-arr) (MIT, © Jim Christian), whose maintainer has deliberately scoped that project to Sonarr/Radarr/Lidarr/Prowlarr. This fork covers the wider *arr stack — Whisparr, Chaptarr (books), Jellyseerr (requests) and Bazarr (subtitles) today, more to come.
 >
 > Distributed as a **container image only**; there is no npm package for this fork.
 
@@ -102,7 +116,7 @@ whether they were supplied:
 ```json
 {
   "status": "ok",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "transport": "http",
   "access": "read-write",
   "toolCount": 131,
@@ -178,7 +192,7 @@ build anything:
 docker pull ghcr.io/davidgibbons/mcp-arr:latest
 ```
 
-Tags follow the release version — `latest`, `1`, `1.7`, and each exact version such as `1.7.3`.
+Tags follow the release version — `latest`, `1`, `1.9`, and each exact version such as `1.9.0`.
 Pin to a major or minor tag if you want updates without surprises.
 
 Run in local stdio mode:
@@ -226,15 +240,6 @@ Only needed if you are developing against a change that is not released yet:
 
 ```bash
 docker build -t mcp-arr .
-```
-
-### From Source
-
-```bash
-git clone https://github.com/davidgibbons/mcp-arr.git
-cd mcp-arr
-npm install
-npm run build
 ```
 
 ## Configuration
@@ -373,7 +378,7 @@ The existing service-specific tools remain available for richer local or power-u
 
 ## Available Tools
 
-Every tool is published with [MCP tool annotations](https://modelcontextprotocol.io/specification/server/tools#tool-annotations),
+Every tool is published with [MCP tool annotations](https://modelcontextprotocol.io/community/interest-groups/tool-annotations#tool-annotations-charter),
 so a client can tell reads from writes without parsing descriptions:
 
 | Annotation | Meaning here |
