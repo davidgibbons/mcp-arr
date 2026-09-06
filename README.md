@@ -91,6 +91,51 @@ Environment variables for remote mode:
 - `HOST` to override the bind host (default `127.0.0.1`)
 - `PORT` to override the port (default `3000`)
 - `MCP_PATH` to override the MCP endpoint path (default `/mcp`)
+- `MCP_ARR_HEALTH_INTERVAL` seconds between credential health probes (default `60`; `0` disables them)
+
+### Health Endpoint
+
+`GET /health` reports whether the configured API keys actually work, not just
+whether they were supplied:
+
+```json
+{
+  "status": "ok",
+  "version": "1.8.0",
+  "transport": "http",
+  "configuredServices": ["sonarr", "radarr"],
+  "credentialsOk": false,
+  "services": {
+    "sonarr": { "status": "ok", "lastChecked": "2026-09-05T23:48:38.096Z" },
+    "radarr": {
+      "status": "unauthorized",
+      "lastChecked": "2026-09-05T23:48:38.098Z",
+      "error": "radarr API error: 401 Unauthorized - "
+    }
+  }
+}
+```
+
+Each service is probed in the background on a timer and the result is cached, so
+`/health` stays cheap enough for a container probe and never makes eight upstream
+calls per request. Per-service `status` is one of:
+
+| Status | Meaning |
+|---|---|
+| `ok` | The service answered and accepted the API key. |
+| `unauthorized` | The service answered and **rejected** the key (401/403). |
+| `unreachable` | Could not get an answer - DNS, refused, or no response within 10s. |
+| `pending` | Not probed yet, or probing is disabled. |
+
+`credentialsOk` is `true` only when every configured service is `ok`, `false`
+when any is failing, and `null` while the first sweep is still running - never
+checked is not the same as broken.
+
+**Top-level `status` stays `ok` whenever the process itself is healthy**, and
+`/health` always answers `200`. That is deliberate: it is wired to container
+liveness probes, and failing it because someone else's Sonarr is down would
+restart this server for an outage it cannot fix. Alert on `credentialsOk`
+instead.
 
 ### Docker
 

@@ -403,6 +403,49 @@ export interface SearchResult {
   disambiguation?: string;
 }
 
+/**
+ * An HTTP error from an *arr API, carrying the status code. Callers that need
+ * to distinguish a rejected key (401/403) from any other failure should check
+ * `httpStatus` rather than parsing the message.
+ */
+export class ArrApiError extends Error {
+  constructor(message: string, readonly httpStatus: number) {
+    super(message);
+    this.name = "ArrApiError";
+  }
+}
+
+/**
+ * How long a credential probe may take before it is called unreachable. Node's
+ * fetch has no default response timeout: without this, a host that completes the
+ * TCP handshake and then goes silent leaves the probe pending forever.
+ */
+const PROBE_TIMEOUT_MS = 10_000;
+
+export type ProbeStatus = "ok" | "unauthorized" | "unreachable";
+
+export interface ProbeResult {
+  status: ProbeStatus;
+  error?: string;
+}
+
+/**
+ * Turn a thrown probe failure into a status. 401 and 403 mean the service
+ * answered and rejected the credential; anything else (DNS, refused, timeout,
+ * an unexpected 404) means we cannot say the credential is wrong, only that we
+ * could not check it.
+ */
+export function classifyProbeError(error: unknown): ProbeResult {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof ArrApiError && (error.httpStatus === 401 || error.httpStatus === 403)) {
+    return { status: "unauthorized", error: message };
+  }
+  if (error instanceof Error && error.name === "TimeoutError") {
+    return { status: "unreachable", error: `no response within ${PROBE_TIMEOUT_MS / 1000}s` };
+  }
+  return { status: "unreachable", error: message };
+}
+
 export class ArrClient {
   private config: ArrConfig;
   private serviceName: ArrService;
@@ -439,7 +482,10 @@ export class ArrClient {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`${this.serviceName} API error: ${response.status} ${response.statusText} - ${text}`);
+      throw new ArrApiError(
+        `${this.serviceName} API error: ${response.status} ${response.statusText} - ${text}`,
+        response.status,
+      );
     }
 
     // DELETE endpoints answer 200 or 204 with an empty body, which
@@ -484,6 +530,22 @@ export class ArrClient {
    */
   async getRootFolders(): Promise<Array<{ id: number; path: string; freeSpace: number }>> {
     return this.request<Array<{ id: number; path: string; freeSpace: number }>>('/rootfolder');
+  }
+
+  /**
+   * Check that this service is reachable AND that the configured API key is
+   * accepted. Unlike testConnection() this keeps the distinction, which is the
+   * whole point: a rejected key and a dead host need different fixes.
+   */
+  async probe(): Promise<ProbeResult> {
+    try {
+      await this.request<SystemStatus>('/system/status', {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      return { status: "ok" };
+    } catch (error) {
+      return classifyProbeError(error);
+    }
   }
 
   /**
@@ -1582,6 +1644,29 @@ export class JellyseerrClient extends ArrClient {
   constructor(config: ArrConfig) {
     super('jellyseerr', config);
     this.apiVersion = 'v1';
+  }
+
+  /**
+   * Jellyseerr cannot use the inherited probe. Two separate reasons, both
+   * verified against Jellyseerr 3.3.0:
+   *
+   * - `/api/v1/system/status` does not exist here; it answers 404.
+   * - `/api/v1/status` does exist, but is UNAUTHENTICATED - it returns 200 with
+   *   a garbage API key, so it cannot tell a good credential from a bad one.
+   *   Probing it would report `ok` for a completely invalid key, which is the
+   *   exact false reassurance this probe exists to remove.
+   *
+   * `/request/count` requires the key and answers 403 without it.
+   */
+  async probe(): Promise<ProbeResult> {
+    try {
+      await this['request']<JellyseerrRequestCounts>('/request/count', {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      return { status: "ok" };
+    } catch (error) {
+      return classifyProbeError(error);
+    }
   }
 
   async getRequestCounts(): Promise<JellyseerrRequestCounts> {
