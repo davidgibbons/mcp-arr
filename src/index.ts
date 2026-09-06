@@ -24,7 +24,8 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createServer } from "node:http";
+import { createServer, IncomingMessage } from "node:http";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
   SonarrClient,
@@ -99,6 +100,65 @@ function parseAccessMode(raw: string | undefined): AccessMode {
 }
 
 const ACCESS_MODE: AccessMode = parseAccessMode(process.env.MCP_ARR_ACCESS);
+
+// --- Bearer token authentication ---------------------------------------------
+//
+// The HTTP transport has no authentication of its own unless one is configured
+// here. That default is unchanged - existing deployments keep working - but a
+// server holding eight *arr API keys should be able to defend itself rather than
+// relying on the operator to put a proxy in front of it.
+//
+// Two tokens, so a reader and a writer can be told apart without running two
+// servers: MCP_ARR_AUTH_TOKEN gets whatever MCP_ARR_ACCESS allows, and
+// MCP_ARR_AUTH_TOKEN_READONLY is always read-only no matter what.
+
+const AUTH_TOKEN = process.env.MCP_ARR_AUTH_TOKEN || "";
+const AUTH_TOKEN_READONLY = process.env.MCP_ARR_AUTH_TOKEN_READONLY || "";
+const AUTH_REQUIRED = Boolean(AUTH_TOKEN || AUTH_TOKEN_READONLY);
+
+/**
+ * Constant-time comparison of two secrets.
+ *
+ * timingSafeEqual throws unless both buffers are the same length, and guarding
+ * that with an early length check would leak the token's length through timing.
+ * Hashing first gives two fixed-width digests, so every comparison does the same
+ * work regardless of what was supplied.
+ */
+function secretsMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const digestA = createHash("sha256").update(a).digest();
+  const digestB = createHash("sha256").update(b).digest();
+  return timingSafeEqual(digestA, digestB);
+}
+
+type AuthOutcome =
+  | { authenticated: true; access: AccessMode }
+  | { authenticated: false };
+
+/**
+ * Resolve what a request is allowed to do.
+ *
+ * The read-only token is deliberately capped rather than merely defaulted: if
+ * the server as a whole is running read-only, the full token cannot escalate
+ * past it. MCP_ARR_ACCESS is a ceiling, not a starting point.
+ */
+function authenticate(req: IncomingMessage): AuthOutcome {
+  if (!AUTH_REQUIRED) return { authenticated: true, access: ACCESS_MODE };
+
+  const header = req.headers.authorization || "";
+  const match = /^Bearer (.+)$/i.exec(header.trim());
+  if (!match) return { authenticated: false };
+  const presented = match[1].trim();
+
+  // Both comparisons always run, so a request cannot learn which token it was
+  // closer to from how long the answer took.
+  const isFull = secretsMatch(presented, AUTH_TOKEN);
+  const isReadOnly = secretsMatch(presented, AUTH_TOKEN_READONLY);
+
+  if (isFull) return { authenticated: true, access: ACCESS_MODE };
+  if (isReadOnly) return { authenticated: true, access: "read-only" };
+  return { authenticated: false };
+}
 
 // Configuration from environment
 interface ServiceConfig {
@@ -2309,10 +2369,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   if (!isToolAllowed(access, name)) {
+    // Two different reasons land here and they need different fixes: the server
+    // is read-only for everyone, or this particular credential is.
+    const reason = ACCESS_MODE === "read-only"
+      ? "this server is running in read-only mode (MCP_ARR_ACCESS=read-only)"
+      : "this credential has read-only access";
     return {
       content: [{
         type: "text",
-        text: `Error: ${name} changes state and this server is running in read-only mode (MCP_ARR_ACCESS=read-only).`,
+        text: `Error: ${name} changes state and ${reason}.`,
       }],
       isError: true,
     };
@@ -4550,6 +4615,7 @@ async function startHttpServer() {
         version: SERVER_VERSION,
         transport: "http",
         access: ACCESS_MODE,
+        authRequired: AUTH_REQUIRED,
         toolCount: toolsFor(ACCESS_MODE).length,
         // Kept for compatibility: which services were configured at all.
         configuredServices: configuredServices.map((service) => service.name),
@@ -4566,6 +4632,21 @@ async function startHttpServer() {
       return;
     }
 
+    const auth = authenticate(req);
+    if (!auth.authenticated) {
+      // Refuse before building a server: there is no reason to construct one
+      // for a request that is not allowed to speak to it.
+      res.writeHead(401, {
+        "Content-Type": "application/json",
+        "WWW-Authenticate": 'Bearer realm="mcp-arr"',
+      });
+      res.end(JSON.stringify({
+        error: "unauthorized",
+        message: "A valid bearer token is required. Set Authorization: Bearer <token>.",
+      }));
+      return;
+    }
+
     // Stateless HTTP: a fresh server + transport per request, with no session
     // id issued (sessionIdGenerator: undefined). This lets MCP clients that do
     // not echo the Mcp-Session-Id header back — e.g. Claude Code — work. Using a
@@ -4575,7 +4656,7 @@ async function startHttpServer() {
     // queue deadlocked the moment a streamable client (e.g. a gateway/proxy)
     // opened its GET stream — that request never completes, so every later
     // request hung behind it.
-    const requestServer = buildServer();
+    const requestServer = buildServer(auth.access);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
@@ -4601,8 +4682,17 @@ async function startHttpServer() {
 
   console.error(
     `*arr MCP server running over HTTP at http://${HTTP_HOST}:${HTTP_PORT}${HTTP_PATH}` +
-    ` - access: ${ACCESS_MODE} (${toolsFor(ACCESS_MODE).length} tools)`,
+    ` - access: ${ACCESS_MODE} (${toolsFor(ACCESS_MODE).length} tools)` +
+    ` - auth: ${AUTH_REQUIRED ? "bearer token" : "NONE"}`,
   );
+  if (!AUTH_REQUIRED) {
+    // A silent insecure default is how this bites people. Say it out loud.
+    console.error(
+      "[mcp-arr] WARNING: the HTTP endpoint is unauthenticated. Anyone who can reach " +
+      `http://${HTTP_HOST}:${HTTP_PORT}${HTTP_PATH} can use every configured *arr API key. ` +
+      "Set MCP_ARR_AUTH_TOKEN, or keep this on a trusted network behind an authenticating proxy.",
+    );
+  }
 }
 
 // Start the server
