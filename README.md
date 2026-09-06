@@ -93,6 +93,7 @@ Environment variables for remote mode:
 - `MCP_PATH` to override the MCP endpoint path (default `/mcp`)
 - `MCP_ARR_HEALTH_INTERVAL` seconds between credential health probes (default `60`; `0` disables them)
 - `MCP_ARR_ACCESS` set to `read-only` to drop the 24 mutating tools (default `read-write`; see [Access Mode](#access-mode))
+- `MCP_ARR_AUTH_TOKEN` / `MCP_ARR_AUTH_TOKEN_READONLY` require a bearer token on the MCP endpoint (see [Authentication](#authentication))
 
 ### Health Endpoint
 
@@ -105,6 +106,7 @@ whether they were supplied:
   "version": "1.8.0",
   "transport": "http",
   "access": "read-write",
+  "authRequired": true,
   "toolCount": 131,
   "configuredServices": ["sonarr", "radarr"],
   "credentialsOk": false,
@@ -168,6 +170,54 @@ already knows a tool name — hardcoded, or remembered from an earlier session �
 still cannot invoke it. `GET /health` reports the active mode and the resulting
 tool count, and an invalid value exits at startup rather than quietly falling
 back to read-write.
+
+### Authentication
+
+By default the HTTP endpoint is **unauthenticated** — anyone who can reach it can
+use every configured *arr API key. Set a bearer token and it stops being open:
+
+| Variable | Effect |
+|---|---|
+| `MCP_ARR_AUTH_TOKEN` | Requests must send `Authorization: Bearer <token>`. Grants whatever `MCP_ARR_ACCESS` allows. |
+| `MCP_ARR_AUTH_TOKEN_READONLY` | A second token that is **always** read-only, whatever `MCP_ARR_ACCESS` says. |
+
+Setting either one turns authentication on. Setting neither keeps the previous
+behaviour, and the server prints a warning at startup saying so.
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e MCP_TRANSPORT=http -e HOST=0.0.0.0 \
+  -e MCP_ARR_AUTH_TOKEN="$(openssl rand -hex 32)" \
+  -e MCP_ARR_AUTH_TOKEN_READONLY="$(openssl rand -hex 32)" \
+  -e SONARR_URL=http://host.docker.internal:8989 \
+  -e SONARR_API_KEY=your-sonarr-api-key \
+  ghcr.io/davidgibbons/mcp-arr:latest
+```
+
+Two tokens means one server can serve a reader and a writer: hand the read-only
+token to a shared assistant and keep the full one for yourself. The read-only
+token gets exactly the tools [read-only mode](#access-mode) allows, enforced on
+`tools/call` as well as `tools/list`.
+
+`MCP_ARR_ACCESS` is a **ceiling, not a default**. On a server started with
+`MCP_ARR_ACCESS=read-only`, the full token is read-only too — a credential can
+never widen what the server itself allows.
+
+Notes:
+
+- `GET /health` stays unauthenticated so container probes keep working. It
+  reports `authRequired` but never the token.
+- Rejected requests get `401` with `WWW-Authenticate: Bearer`, before any MCP
+  machinery runs.
+- Tokens are compared in constant time, so a wrong token reveals nothing about
+  the right one through timing.
+- This applies to the HTTP transport only. In `stdio` mode the transport is the
+  trust boundary.
+
+Server-side tokens are the simplest thing that works and suit a machine client
+that can only send a fixed header. They are not a replacement for an identity
+provider — if you have one, OAuth support is tracked in
+[#10](https://github.com/davidgibbons/mcp-arr/issues/10).
 
 ### Docker
 
