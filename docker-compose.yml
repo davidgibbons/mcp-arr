@@ -3,18 +3,20 @@
 #
 # SECURITY: the default below binds the container to all interfaces
 # (HOST=0.0.0.0) and maps port 3000 on the host, and the MCP endpoint is
-# unauthenticated unless you give it a token. Two settings decide who can reach
-# it and what they can do:
+# unauthenticated unless you configure MCP_ARR_AUTH_MODE. Two ways to close it:
 #
-#   MCP_ARR_AUTH_TOKEN           require `Authorization: Bearer <token>`
-#   MCP_ARR_AUTH_TOKEN_READONLY  a second token that can only read
+#   token  MCP_ARR_AUTH_TOKEN           require `Authorization: Bearer <token>`
+#          MCP_ARR_AUTH_TOKEN_READONLY  a second token that can only read
+#          Generate them with `openssl rand -hex 32`.
 #
-# Generate them with `openssl rand -hex 32`.
+#   oauth  MCP_ARR_OAUTH_ISSUER    your IdP, e.g. Authentik or Keycloak
+#          MCP_ARR_OAUTH_AUDIENCE  the `aud` this server accepts
+#          Validates JWTs itself and reads read/write access off their scopes.
 #
-# Without a token, keep this on a trusted/LAN network or behind an
-# authenticating reverse proxy - do NOT expose port 3000 directly to the public
-# internet. To restrict host access to localhost only, change the port mapping
-# to "127.0.0.1:3000:3000".
+# Without either, keep this on a trusted/LAN network or behind an authenticating
+# reverse proxy - do NOT expose port 3000 directly to the public internet. To
+# restrict host access to localhost only, change the port mapping to
+# "127.0.0.1:3000:3000".
 #
 # To limit the blast radius of whoever can reach it, set MCP_ARR_ACCESS=read-only
 # below: the 24 tools that add media, trigger downloads, delete queue items or
@@ -37,9 +39,14 @@ services:
       MCP_PATH: /mcp
       # Set to read-only to drop the 24 mutating tools.
       MCP_ARR_ACCESS: ${MCP_ARR_ACCESS:-read-write}
-      # Uncomment to require a bearer token on every MCP request.
+      # Uncomment ONE of the two blocks below to close the endpoint.
+      # A static bearer token:
       # MCP_ARR_AUTH_TOKEN: ${MCP_ARR_AUTH_TOKEN:-}
       # MCP_ARR_AUTH_TOKEN_READONLY: ${MCP_ARR_AUTH_TOKEN_READONLY:-}
+      # Or OAuth 2.1 against your own identity provider:
+      # MCP_ARR_AUTH_MODE: oauth
+      # MCP_ARR_OAUTH_ISSUER: ${MCP_ARR_OAUTH_ISSUER:-}
+      # MCP_ARR_OAUTH_AUDIENCE: ${MCP_ARR_OAUTH_AUDIENCE:-}
       # Sonarr
       SONARR_URL: ${SONARR_URL:-}
       SONARR_API_KEY: ${SONARR_API_KEY:-}

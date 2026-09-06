@@ -93,7 +93,7 @@ Environment variables for remote mode:
 - `MCP_PATH` to override the MCP endpoint path (default `/mcp`)
 - `MCP_ARR_HEALTH_INTERVAL` seconds between credential health probes (default `60`; `0` disables them)
 - `MCP_ARR_ACCESS` set to `read-only` to drop the 24 mutating tools (default `read-write`; see [Access Mode](#access-mode))
-- `MCP_ARR_AUTH_TOKEN` / `MCP_ARR_AUTH_TOKEN_READONLY` require a bearer token on the MCP endpoint (see [Authentication](#authentication))
+- `MCP_ARR_AUTH_MODE` `none` (default), `token` or `oauth` — how the endpoint authenticates callers (see [Authentication](#authentication))
 
 ### Health Endpoint
 
@@ -106,6 +106,7 @@ whether they were supplied:
   "version": "1.8.0",
   "transport": "http",
   "access": "read-write",
+  "authMode": "oauth",
   "authRequired": true,
   "toolCount": 131,
   "configuredServices": ["sonarr", "radarr"],
@@ -174,15 +175,31 @@ back to read-write.
 ### Authentication
 
 By default the HTTP endpoint is **unauthenticated** — anyone who can reach it can
-use every configured *arr API key. Set a bearer token and it stops being open:
+use every configured *arr API key. `MCP_ARR_AUTH_MODE` picks how it defends
+itself:
+
+| Mode | What it does |
+|---|---|
+| `none` | Open. The historical behaviour, and what you get with nothing configured. |
+| `token` | A static bearer token, optionally a second read-only one. |
+| `oauth` | OAuth 2.1 resource server: validates JWTs from your IdP and reads access off their scopes. |
+
+The mode is **inferred** from what you configure, so setting `MCP_ARR_AUTH_TOKEN`
+alone still just works. What it will never do is fall back to `none` because you
+mistyped something: a setting that only makes sense in a mode drags that mode in,
+and an incomplete mode is a startup failure rather than a silent open endpoint.
+Set `MCP_ARR_AUTH_MODE` explicitly to be sure, or when both modes' settings are
+present and the server can't tell which you meant.
+
+This applies to the HTTP transport only. In `stdio` mode the transport is the
+trust boundary.
+
+#### `token` — a static bearer token
 
 | Variable | Effect |
 |---|---|
 | `MCP_ARR_AUTH_TOKEN` | Requests must send `Authorization: Bearer <token>`. Grants whatever `MCP_ARR_ACCESS` allows. |
 | `MCP_ARR_AUTH_TOKEN_READONLY` | A second token that is **always** read-only, whatever `MCP_ARR_ACCESS` says. |
-
-Setting either one turns authentication on. Setting neither keeps the previous
-behaviour, and the server prints a warning at startup saying so.
 
 ```bash
 docker run --rm -p 3000:3000 \
@@ -199,25 +216,68 @@ token to a shared assistant and keep the full one for yourself. The read-only
 token gets exactly the tools [read-only mode](#access-mode) allows, enforced on
 `tools/call` as well as `tools/list`.
 
-`MCP_ARR_ACCESS` is a **ceiling, not a default**. On a server started with
-`MCP_ARR_ACCESS=read-only`, the full token is read-only too — a credential can
-never widen what the server itself allows.
+This mode is not the legacy path. Some MCP clients can only send a fixed header
+and cannot refresh anything, and a deployment that accepts only short-lived
+OAuth tokens locks them out entirely.
 
-Notes:
+#### `oauth` — OAuth 2.1 resource server
+
+The server validates JWTs directly against your identity provider's signing keys
+— Authentik, Keycloak, Auth0, Entra. Clients that implement the MCP authorization
+spec, Claude and ChatGPT among them, will run the whole flow themselves.
+
+| Variable | Effect |
+|---|---|
+| `MCP_ARR_OAUTH_ISSUER` | **Required.** The expected `iss`. |
+| `MCP_ARR_OAUTH_AUDIENCE` | **Required.** The expected `aud`. Without it, any token that issuer ever minted for any of its clients would be accepted here. |
+| `MCP_ARR_OAUTH_JWKS_URI` | Where the signing keys live. Defaults to the `jwks_uri` from the issuer's `/.well-known/openid-configuration`. |
+| `MCP_ARR_OAUTH_SCOPE_READ` | Scope granting read access (default `mcp-arr:read`). |
+| `MCP_ARR_OAUTH_SCOPE_WRITE` | Scope granting the mutating tools (default `mcp-arr:write`). |
+| `MCP_ARR_OAUTH_RESOURCE` | Pin the advertised resource identifier. Defaults to the request's own URL, which is what you want unless a proxy rewrites the path. |
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e MCP_TRANSPORT=http -e HOST=0.0.0.0 \
+  -e MCP_ARR_AUTH_MODE=oauth \
+  -e MCP_ARR_OAUTH_ISSUER=https://auth.example.com/application/o/mcp-arr/ \
+  -e MCP_ARR_OAUTH_AUDIENCE=https://mcp-arr.example.com/mcp \
+  -e SONARR_URL=http://host.docker.internal:8989 \
+  -e SONARR_API_KEY=your-sonarr-api-key \
+  ghcr.io/davidgibbons/mcp-arr:latest
+```
+
+Scopes decide access: the write scope grants whatever `MCP_ARR_ACCESS` allows,
+the read scope grants read-only, and a token carrying **neither** is refused with
+`403 insufficient_scope` rather than quietly downgraded to a reader. If your IdP
+does not mint scopes of its own, point `MCP_ARR_OAUTH_SCOPE_READ` at one it does.
+
+`GET /.well-known/oauth-protected-resource` serves the
+[RFC 9728](https://www.rfc-editor.org/rfc/rfc9728) document (also at the
+path-inserted `…/oauth-protected-resource/mcp`), and a `401` carries
+`WWW-Authenticate: Bearer resource_metadata="…"` pointing at it. That pair is
+what makes the flow automatic; without it a client sees an opaque 401 and you
+wire everything by hand.
+
+Signing keys are fetched lazily and cached, and refetched when a token arrives
+with an unseen `kid`, so the issuer can rotate keys without a restart. If the
+issuer is unreachable the answer is `503`, not `401` — your token isn't the
+problem, and the error shouldn't send you looking at it.
+
+Tokens must carry an `exp` claim, as [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068)
+requires: an expiry is only checked when it is present, and a token without one
+is a credential that never expires.
+
+#### In every mode
+
+`MCP_ARR_ACCESS` is a **ceiling, not a default**. On a server started with
+`MCP_ARR_ACCESS=read-only`, neither the full token nor a write scope gets the
+mutating tools — a credential can only ever narrow what the server allows.
 
 - `GET /health` stays unauthenticated so container probes keep working. It
-  reports `authRequired` but never the token.
-- Rejected requests get `401` with `WWW-Authenticate: Bearer`, before any MCP
-  machinery runs.
-- Tokens are compared in constant time, so a wrong token reveals nothing about
-  the right one through timing.
-- This applies to the HTTP transport only. In `stdio` mode the transport is the
-  trust boundary.
-
-Server-side tokens are the simplest thing that works and suit a machine client
-that can only send a fixed header. They are not a replacement for an identity
-provider — if you have one, OAuth support is tracked in
-[#10](https://github.com/davidgibbons/mcp-arr/issues/10).
+  reports `authMode` and `authRequired`, never the token.
+- Rejected requests are answered before any MCP machinery is constructed.
+- Static tokens are compared in constant time, so a wrong token reveals nothing
+  about the right one through timing.
 
 ### Docker
 
