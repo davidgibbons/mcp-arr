@@ -1,11 +1,20 @@
 # Ready-to-run Compose file for self-hosting mcp-arr in remote HTTP mode
 # (e.g. for n8n). Pulls the published image from GHCR.
 #
-# SECURITY: the HTTP MCP endpoint is UNAUTHENTICATED. The default below binds the
-# container to all interfaces (HOST=0.0.0.0) and maps port 3000 on the host.
-# Keep this on a trusted/LAN network or behind an authenticating reverse proxy —
-# do NOT expose port 3000 directly to the public internet. To restrict host access
-# to localhost only, change the port mapping to "127.0.0.1:3000:3000".
+# SECURITY: the default below binds the container to all interfaces
+# (HOST=0.0.0.0) and maps port 3000 on the host, and the MCP endpoint is
+# unauthenticated unless you give it a token. Two settings decide who can reach
+# it and what they can do:
+#
+#   MCP_ARR_AUTH_TOKEN           require `Authorization: Bearer <token>`
+#   MCP_ARR_AUTH_TOKEN_READONLY  a second token that can only read
+#
+# Generate them with `openssl rand -hex 32`.
+#
+# Without a token, keep this on a trusted/LAN network or behind an
+# authenticating reverse proxy - do NOT expose port 3000 directly to the public
+# internet. To restrict host access to localhost only, change the port mapping
+# to "127.0.0.1:3000:3000".
 #
 # To limit the blast radius of whoever can reach it, set MCP_ARR_ACCESS=read-only
 # below: the 24 tools that add media, trigger downloads, delete queue items or
@@ -28,6 +37,9 @@ services:
       MCP_PATH: /mcp
       # Set to read-only to drop the 24 mutating tools.
       MCP_ARR_ACCESS: ${MCP_ARR_ACCESS:-read-write}
+      # Uncomment to require a bearer token on every MCP request.
+      # MCP_ARR_AUTH_TOKEN: ${MCP_ARR_AUTH_TOKEN:-}
+      # MCP_ARR_AUTH_TOKEN_READONLY: ${MCP_ARR_AUTH_TOKEN_READONLY:-}
       # Sonarr
       SONARR_URL: ${SONARR_URL:-}
       SONARR_API_KEY: ${SONARR_API_KEY:-}
