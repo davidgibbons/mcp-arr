@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.10.0](https://github.com/davidgibbons/mcp-arr/compare/v1.9.0...v1.10.0) (2026-09-21)
+
+
+### Added
+
+* OAuth 2.1 resource-server mode with scope-based access ([46d4079](https://github.com/davidgibbons/mcp-arr/commit/46d40796442d5087e3fdd568a69ac8c3055a30a1))
+* OAuth 2.1 resource-server mode with scope-based access ([0abb9ff](https://github.com/davidgibbons/mcp-arr/commit/0abb9ffb0883dcc6aa6a73b98d4bcf9dee6ba943)), closes [#10](https://github.com/davidgibbons/mcp-arr/issues/10)
+* optional bearer-token auth for the HTTP transport ([c9c8d56](https://github.com/davidgibbons/mcp-arr/commit/c9c8d561fe64ae28e6c4658f72136631d365a88b))
+* optional bearer-token auth for the HTTP transport ([5e55628](https://github.com/davidgibbons/mcp-arr/commit/5e55628f7a87f4e0b0a5075c59cda06a602310cd)), closes [#9](https://github.com/davidgibbons/mcp-arr/issues/9)
+
 ## [1.9.0](https://github.com/davidgibbons/mcp-arr/compare/v1.8.0...v1.9.0) (2026-09-06)
 
 
