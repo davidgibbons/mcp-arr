@@ -1,6 +1,7 @@
 # AGENTS.md - mcp-arr
 
-MCP server for the *arr media management suite (Sonarr, Radarr, Lidarr, Prowlarr, Whisparr).
+MCP server for the *arr media management suite (Sonarr, Radarr, Lidarr, Prowlarr,
+Whisparr, Chaptarr, Jellyseerr, Bazarr).
 
 ## Tech Stack
 
@@ -11,15 +12,19 @@ MCP server for the *arr media management suite (Sonarr, Radarr, Lidarr, Prowlarr
 
 ## Architecture
 
+Three source files. There is no `src/tools/` directory and no `src/types.ts`
+— tool definitions, handlers and types all live in the files below.
+
 ```
 src/
-├── index.ts          # Server entry point, tool registration
-├── tools/            # Tool implementations by service
-│   ├── sonarr.ts     # TV show management
-│   ├── radarr.ts     # Movie management
-│   ├── lidarr.ts     # Music management
-│   └── prowlarr.ts   # Indexer management
-└── types.ts          # Shared TypeScript types
+├── index.ts          # Entry point: bearer auth, health probe, tool definitions,
+│                     #   handlers, mutation classification, stdio + HTTP transports
+├── arr-client.ts     # ArrClient base + per-service subclasses and their types:
+│                     #   Sonarr, Radarr, Lidarr, Prowlarr, Whisparr, Chaptarr,
+│                     #   Jellyseerr, Bazarr
+└── trash-client.ts   # TRaSH Guides fetch + cache
+test/                 # node:test .mjs suites, driven through an in-process MCP client
+tools.json            # Checked-in snapshot of the tool catalogue; nothing reads it at runtime
 ```
 
 ## Development Commands
@@ -30,6 +35,9 @@ npm run build
 
 # Watch mode
 npm run watch
+
+# Build + run the test suite
+npm test
 
 # Test locally (requires env vars)
 node dist/index.js
@@ -121,10 +129,12 @@ rules:
 
 ### Adding a New Tool
 
-1. Add tool definition in appropriate `src/tools/{service}.ts`
-2. Register in `src/index.ts` tool list
-3. Update README.md "Available Tools" section
-4. Update CHANGELOG.md
+1. Add the client method to the service's class in `src/arr-client.ts`
+2. Add the tool definition and its handler in `src/index.ts`
+3. Classify it in the mutation/read-only table in `src/index.ts` (access-mode gating)
+4. Update README.md "Available Tools" section
+
+Do not hand-edit CHANGELOG.md — release-please writes it from commit subjects.
 
 ### Testing Changes
 
